@@ -10,32 +10,22 @@ import {
   isPnUser,
 } from '@whiskeysockets/baileys';
 import pkg from 'pg';
-import {
-  usePgAuthState
-} from './pgAuthState.js';
+import { usePgAuthState } from './pgAuthState.js';
 import pino from 'pino';
-import {
-  exec
-} from 'child_process';
-import {
-  promisify
-} from 'util';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import http from 'http';
 
 const execAsync = promisify(exec);
-const {
-  Pool
-} = pkg;
+const { Pool } = pkg;
 
-const pool = new Pool( {
+const pool = new Pool({
   host: process.env.PG_HOST || 'localhost',
   port: process.env.PG_PORT || 5432,
   database: process.env.PG_DATABASE || 'neondb',
   user: process.env.PG_USER || 'neondb_owner',
   password: process.env.PG_PASSWORD || 'my_secure_password',
-  ssl: {
-    rejectUnauthorized: false
-  }
+  ssl: { rejectUnauthorized: false }
 });
 
 const PHONE_NUMBER = process.env.PHONE_NUMBER || '6285185985868';
@@ -51,24 +41,15 @@ function getOwnerJids() {
 let version = [];
 
 async function start() {
-  const {
-    state,
-    saveCreds
-  } = await usePgAuthState(pool, 'session-1');
-  const {
-    version: v,
-    isLatest
-  } = await fetchLatestBaileysVersion();
+  const { state, saveCreds } = await usePgAuthState(pool, 'session-1');
+  const { version: v, isLatest } = await fetchLatestBaileysVersion();
   version = v;
-
 
   console.log(`Using WA v${version.join('.')}, isLatest: ${isLatest}`);
 
-  const sock = makeWASocket( {
+  const sock = makeWASocket({
     browser: Browsers.macOS('Edge'),
-    logger: pino( {
-      level: 'error'
-    }),
+    logger: pino({ level: 'error' }),
     auth: state,
     version,
     syncFullHistory: false,
@@ -86,9 +67,7 @@ async function start() {
     }
   }
 
-  sock.ev.on('connection.update', async ({
-    connection, lastDisconnect
-  }) => {
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
       if (code !== DisconnectReason.loggedOut) start();
@@ -96,193 +75,154 @@ async function start() {
     if (connection === 'open') console.log('Connected');
   });
 
-  sock.ev.on('creds.update',
-    saveCreds);
+  sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('messages.upsert',
-    async ({
-      messages
-    }) => {
-      for (const msg of messages) {
-        if (!msg.message) continue;
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return;
 
-        const from = msg.key.remoteJid;
-        const text = msg.message.conversation ?? msg.message.extendedTextMessage?.text ?? '';
-        const chatType = getChatType(from);
-        const sender = getSender(msg);
-        const senderAlt = getSenderAlt(msg);
+    for (const msg of messages) {
+      if (!msg.message) continue;
 
-        if (chatType === 'group') {
-          console.log(`[GROUP] ${from} | sender: ${sender} | senderAlt: ${senderAlt}`);
-        } else if (chatType === 'private') {
-          const mode = msg.key.addressingMode || 'pn';
-          console.log(`[PRIVATE (${mode})] sender: ${sender} | alt: ${senderAlt}`);
-        } else if (chatType === 'newsletter') {
-          console.log(`[NEWSLETTER] ${from}`);
-        } else if (chatType === 'broadcast') {
-          console.log(`[BROADCAST] ${from}`);
-        } else {
-          console.log(`[UNKNOWN] ${from}`);
-        }
+      const from = msg.key.remoteJid;
+      const text = msg.message.conversation ?? msg.message.extendedTextMessage?.text ?? '';
+      const chatType = getChatType(from);
+      const sender = getSender(msg);
+      const senderAlt = getSenderAlt(msg);
+      const isOwner = isFromOwner(sender, senderAlt);
 
-        const isOwner = isFromOwner(sender, senderAlt);
-
-        if (text.toLowerCase() === '/invite' && chatType === 'private') {
-          const inviteExpiration = String(Math.floor(Date.now() / 1000) + 604800);
-          await sock.relayMessage(from, {
-            newsletterAdminInviteMessage: {
-              newsletterJid: '120363411786163149@newsletter',
-              newsletterName: 'Yapink Universe',
-              caption: "Accept this invitation to be an admin for my WhatsApp channel, 'tes'",
-              inviteExpiration
-            }
-          }, {
-            messageId: sock.generateMessageTag()
-          });
-        }
-        if (text.startsWith('/eval ') && isOwner) {
-          const code = text.slice(6).trim();
-          let result;
-          try {
-            const fn = new Function(
-              'sock', 'msg', 'from', 'sender', 'senderAlt', 'pool',
-              'getChatType', 'getSender', 'getSenderAlt', 'isFromOwner', 'getPhoneNumber',
-              `return (async () => { return ${code} })()`
-            );
-            result = await fn(sock, msg, from, sender, senderAlt, pool, getChatType, getSender, getSenderAlt, isFromOwner, getPhoneNumber);
-
-            if (result === undefined) result = 'undefined';
-            else if (result === null) result = 'null';
-            else if (typeof result === 'object') {
-              try {
-                result = JSON.stringify(result, null, 2);
-              } catch {
-                result = safeStringify(result);
-              }
-            } else {
-              result = String(result);
-            }
-          } catch (err) {
-            result = `Error: ${err.message}`;
-          }
-          await sock.sendMessage(from, {
-            text: `\`\`\`\n${result}\n\`\`\``
-          }, {
-            quoted: msg
-          });
-        }
-
-
-        if (text.startsWith('/exec ') && isOwner) {
-          const command = text.slice(6).trim();
-          let result;
-          try {
-            const {
-              stdout,
-              stderr
-            } = await execAsync(command, {
-                timeout: 10000
-              });
-            result = stdout || stderr || '(no output)';
-          } catch (err) {
-            result = `Error: ${err.message}`;
-          }
-          await sock.sendMessage(from, {
-            text: `\`\`\`\n${result}\n\`\`\``
-          }, {
-            quoted: msg
-          });
-        }
-
-        if (isOwner) {
-          if (text.toLowerCase() === '/uptime') {
-            const seconds = Math.floor(process.uptime());
-            const d = Math.floor(seconds / 86400);
-            const h = Math.floor((seconds % 86400) / 3600);
-            const m = Math.floor((seconds % 3600) / 60);
-            const s = seconds % 60;
-            const uptime = `${d}d ${h}h ${m}m ${s}s`;
-            await sock.sendMessage(from, {
-              text: `⏱ Uptime: ${uptime}`
-            }, {
-              quoted: msg
-            });
-          }
-
-          if (text.toLowerCase() === '/ping') {
-            const start = Date.now();
-            await sock.sendMessage(from, {
-              text: `🏓 Pong! ${Date.now() - start}ms`
-            }, {
-              quoted: msg
-            });
-          }
-
-          if (text.toLowerCase() === '/info') {
-            const info = [
-              `🤖 Bot Info`,
-              `├ JID     : ${sock.user?.id}`,
-              `├ Name    : ${sock.user?.name}`,
-              `├ Version : ${version.join('.')}`,
-              `├ Uptime  : ${formatUptime(process.uptime())}`,
-              `├ Memory  : ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB`,
-              `└ Node    : ${process.version}`
-            ].join('\n');
-            await sock.sendMessage(from, {
-              text: info
-            }, {
-              quoted: msg
-            });
-          }
-
-          if (text.toLowerCase() === '/restart') {
-            await sock.sendMessage(from, {
-              text: '🔄 Restarting...'
-            }, {
-              quoted: msg
-            });
-            process.exit(0);
-          }
-
-          if (text.toLowerCase() === '/memory') {
-            const mem = process.memoryUsage();
-            const info = [
-              `🧠 Memory Usage`,
-              `├ RSS      : ${(mem.rss / 1024 / 1024).toFixed(2)} MB`,
-              `├ Heap Used: ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB`,
-              `├ Heap Total: ${(mem.heapTotal / 1024 / 1024).toFixed(2)} MB`,
-              `└ External : ${(mem.external / 1024 / 1024).toFixed(2)} MB`
-            ].join('\n');
-            await sock.sendMessage(from, {
-              text: info
-            }, {
-              quoted: msg
-            });
-          }
-
-          if (text.toLowerCase() === '/help') {
-            const help = [
-              `📋 Self Commands`,
-              `├ /uptime  - Uptime bot`,
-              `├ /ping    - Latency bot`,
-              `├ /info    - Info lengkap bot`,
-              `├ /memory  - Memory usage`,
-              `├ /restart - Restart bot`,
-              `├ /eval    - Jalankan kode JS`,
-              `├ /exec    - Jalankan shell command`,
-              `└ /invite  - Kirim invite newsletter`
-            ].join('\n');
-            await sock.sendMessage(from, {
-              text: help
-            }, {
-              quoted: msg
-            });
-          }
-        }
-
-        //console.log(JSON.stringify(msg, null, 2));
+      if (chatType === 'group') {
+        console.log(`[GROUP] ${from} | sender: ${sender} | senderAlt: ${senderAlt}`);
+      } else if (chatType === 'private') {
+        const mode = msg.key.addressingMode || 'pn';
+        console.log(`[PRIVATE (${mode})] sender: ${sender} | alt: ${senderAlt}`);
+      } else if (chatType === 'newsletter') {
+        console.log(`[NEWSLETTER] ${from}`);
+      } else if (chatType === 'broadcast') {
+        console.log(`[BROADCAST] ${from}`);
+      } else {
+        console.log(`[UNKNOWN] ${from}`);
       }
-    });
+
+      if (text.toLowerCase() === '/invite' && chatType === 'private' && isOwner) {
+        const inviteExpiration = String(Math.floor(Date.now() / 1000) + 604800);
+        await sock.relayMessage(from, {
+          newsletterAdminInviteMessage: {
+            newsletterJid: '120363411786163149@newsletter',
+            newsletterName: 'Yapink Universe',
+            caption: "Accept this invitation to be an admin for my WhatsApp channel, 'tes'",
+            inviteExpiration
+          }
+        }, { messageId: sock.generateMessageTag() });
+      }
+
+      const isEval = text.startsWith('/eval ') || text.startsWith('=> ');
+      const isExec = text.startsWith('/exec ') || text.startsWith('$ ');
+
+      if (isEval && isOwner) {
+        const code = text.startsWith('=> ') ? text.slice(3).trim() : text.slice(6).trim();
+        let result;
+        try {
+          const fn = new Function(
+            'sock', 'msg', 'from', 'sender', 'senderAlt', 'pool',
+            'getChatType', 'getSender', 'getSenderAlt', 'isFromOwner', 'getPhoneNumber',
+            `return (async () => { try { return await eval(${JSON.stringify(code)}) } catch(e) { throw e } })()`
+          );
+          result = await fn(sock, msg, from, sender, senderAlt, pool, getChatType, getSender, getSenderAlt, isFromOwner, getPhoneNumber);
+
+          if (result === undefined) result = 'undefined';
+          else if (result === null) result = 'null';
+          else if (typeof result === 'object') {
+            try {
+              result = JSON.stringify(result, null, 2);
+            } catch {
+              result = safeStringify(result);
+            }
+          } else {
+            result = String(result);
+          }
+        } catch (err) {
+          result = `Error: ${err.message}`;
+        }
+        await sock.sendMessage(from, {
+          text: `\`\`\`\n${result}\n\`\`\``
+        }, { quoted: msg });
+      }
+
+      if (isExec && isOwner) {
+        const command = text.startsWith('$ ') ? text.slice(2).trim() : text.slice(6).trim();
+        let result;
+        try {
+          const { stdout, stderr } = await execAsync(command, { timeout: 10000 });
+          result = stdout || stderr || '(no output)';
+        } catch (err) {
+          result = `Error: ${err.message}`;
+        }
+        await sock.sendMessage(from, {
+          text: `\`\`\`\n${result}\n\`\`\``
+        }, { quoted: msg });
+      }
+
+      if (isOwner) {
+        if (text.toLowerCase() === '/uptime') {
+          await sock.sendMessage(from, {
+            text: `⏱ Uptime: ${formatUptime(process.uptime())}`
+          }, { quoted: msg });
+        }
+
+        if (text.toLowerCase() === '/ping') {
+          const start = Date.now();
+          await sock.sendMessage(from, { text: '🏓 Pong!' }, { quoted: msg });
+          const latency = Date.now() - start;
+          await sock.sendMessage(from, { text: `🏓 Pong! ${latency}ms` }, { quoted: msg });
+        }
+
+        if (text.toLowerCase() === '/info') {
+          const info = [
+            `🤖 Bot Info`,
+            `├ JID     : ${sock.user?.id}`,
+            `├ Name    : ${sock.user?.name}`,
+            `├ Version : ${version.join('.')}`,
+            `├ Uptime  : ${formatUptime(process.uptime())}`,
+            `├ Memory  : ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB`,
+            `└ Node    : ${process.version}`
+          ].join('\n');
+          await sock.sendMessage(from, { text: info }, { quoted: msg });
+        }
+
+        if (text.toLowerCase() === '/restart') {
+          await sock.sendMessage(from, { text: '🔄 Restarting...' }, { quoted: msg });
+          process.exit(0);
+        }
+
+        if (text.toLowerCase() === '/memory') {
+          const mem = process.memoryUsage();
+          const info = [
+            `🧠 Memory Usage`,
+            `├ RSS       : ${(mem.rss / 1024 / 1024).toFixed(2)} MB`,
+            `├ Heap Used : ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB`,
+            `├ Heap Total: ${(mem.heapTotal / 1024 / 1024).toFixed(2)} MB`,
+            `└ External  : ${(mem.external / 1024 / 1024).toFixed(2)} MB`
+          ].join('\n');
+          await sock.sendMessage(from, { text: info }, { quoted: msg });
+        }
+
+        if (text.toLowerCase() === '/help') {
+          const help = [
+            `📋 Self Commands`,
+            `├ /uptime        - Uptime bot`,
+            `├ /ping          - Latency bot`,
+            `├ /info          - Info lengkap bot`,
+            `├ /memory        - Memory usage`,
+            `├ /restart       - Restart bot`,
+            `├ /eval | =>     - Jalankan kode JS`,
+            `├ /exec | $      - Jalankan shell command`,
+            `└ /invite        - Kirim invite newsletter`
+          ].join('\n');
+          await sock.sendMessage(from, { text: help }, { quoted: msg });
+        }
+      }
+    }
+  });
 }
 
 const server = http.createServer((req, res) => {
@@ -297,6 +237,14 @@ const server = http.createServer((req, res) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`HTTP server running on port ${PORT}`));
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} already in use`);
+    process.exit(1);
+  } else {
+    console.error('HTTP server error:', err);
+  }
+});
 
 start();
 
@@ -310,20 +258,23 @@ function getChatType(remoteJid) {
 }
 
 function getSender(msg) {
-  const {
-    remoteJid,
-    participant
-  } = msg.key;
-  return isJidGroup(remoteJid) ? participant: remoteJid;
+  const { remoteJid, participant, fromMe } = msg.key;
+
+  if (isJidGroup(remoteJid)) return participant;
+
+  if (fromMe) return getOwnerJids()[0];
+
+  return remoteJid;
 }
 
 function getSenderAlt(msg) {
-  const {
-    remoteJid,
-    remoteJidAlt,
-    participantAlt
-  } = msg.key;
-  return isJidGroup(remoteJid) ? participantAlt: remoteJidAlt;
+  const { remoteJid, remoteJidAlt, participantAlt, fromMe } = msg.key;
+
+  if (isJidGroup(remoteJid)) return participantAlt;
+
+  if (fromMe) return getOwnerJids()[1];
+
+  return remoteJidAlt;
 }
 
 function getPhoneNumber(jid) {
@@ -346,8 +297,7 @@ function safeStringify(obj, indent = 2) {
     if (typeof value === 'function') return `[Function: ${value.name || 'anonymous'}]`;
     if (typeof value === 'bigint') return value.toString();
     return value;
-  },
-    indent);
+  }, indent);
 }
 
 function formatUptime(seconds) {
