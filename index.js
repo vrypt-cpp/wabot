@@ -4,19 +4,13 @@ import {
   makeWASocket,
   DisconnectReason,
   fetchLatestBaileysVersion,
-  isJidGroup,
-  isJidBroadcast,
-  isJidNewsletter,
-  isPnUser,
 } from '@whiskeysockets/baileys';
 import pkg from 'pg';
-import { usePgAuthState } from './pgAuthState.js';
+import { usePgAuthState } from './utils/pgAuthState.js';
 import pino from 'pino';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import http from 'http';
+import { createHttpServer } from './server.js';
+import { handleMessage } from './handler.js';
 
-const execAsync = promisify(exec);
 const { Pool } = pkg;
 
 const pool = new Pool({
@@ -29,16 +23,10 @@ const pool = new Pool({
 });
 
 const PHONE_NUMBER = process.env.PHONE_NUMBER || '6285185985868';
-const OWNER_NUMBER = process.env.OWNER_NUMBER || '6285185985868';
-
-function getOwnerJids() {
-  return [
-    `${OWNER_NUMBER}@s.whatsapp.net`,
-    `${OWNER_NUMBER}@lid`
-  ];
-}
 
 let version = [];
+
+createHttpServer(() => version);
 
 async function start() {
   const { state, saveCreds } = await usePgAuthState(pool, 'session-1');
@@ -79,235 +67,10 @@ async function start() {
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
-
     for (const msg of messages) {
-      if (!msg.message) continue;
-
-      const from = msg.key.remoteJid;
-      const text = msg.message.conversation ?? msg.message.extendedTextMessage?.text ?? '';
-      const chatType = getChatType(from);
-      const sender = getSender(msg);
-      const senderAlt = getSenderAlt(msg);
-      const isOwner = isFromOwner(sender, senderAlt);
-
-      if (chatType === 'group') {
-        console.log(`[GROUP] ${from} | sender: ${sender} | senderAlt: ${senderAlt} | isOwner: ${isOwner}`);
-      } else if (chatType === 'private') {
-        const mode = msg.key.addressingMode || 'pn';
-        console.log(`[PRIVATE (${mode})] sender: ${sender} | alt: ${senderAlt} | isOwner: ${isOwner}`);
-      } else if (chatType === 'newsletter') {
-        console.log(`[NEWSLETTER] ${from}`);
-      } else if (chatType === 'broadcast') {
-        console.log(`[BROADCAST] ${from}`);
-      } else {
-        console.log(`[UNKNOWN] ${from}`);
-      }
-
-      if (!isOwner) continue;
-
-      if (text.toLowerCase() === '/invite' && chatType === 'private') {
-        const inviteExpiration = String(Math.floor(Date.now() / 1000) + 604800);
-        await sock.relayMessage(from, {
-          newsletterAdminInviteMessage: {
-            newsletterJid: '120363411786163149@newsletter',
-            newsletterName: 'Yapink Universe',
-            caption: "Accept this invitation to be an admin for my WhatsApp channel, 'tes'",
-            inviteExpiration
-          }
-        }, { messageId: sock.generateMessageTag() });
-        continue;
-      }
-
-      if (text.startsWith('/eval ') || text.startsWith('=> ')) {
-        const code = text.startsWith('=> ') ? text.slice(3).trim() : text.slice(6).trim();
-        let result;
-        try {
-          const fn = new Function(
-            'sock', 'msg', 'from', 'sender', 'senderAlt', 'pool',
-            'getChatType', 'getSender', 'getSenderAlt', 'isFromOwner', 'getPhoneNumber',
-            `return (async () => { try { return await eval(${JSON.stringify(code)}) } catch(e) { throw e } })()`
-          );
-          result = await fn(sock, msg, from, sender, senderAlt, pool, getChatType, getSender, getSenderAlt, isFromOwner, getPhoneNumber);
-
-          if (result === undefined) result = 'undefined';
-          else if (result === null) result = 'null';
-          else if (typeof result === 'object') {
-            try { result = JSON.stringify(result, null, 2); }
-            catch { result = safeStringify(result); }
-          } else {
-            result = String(result);
-          }
-        } catch (err) {
-          result = `Error: ${err.message}`;
-        }
-        await sock.sendMessage(from, { text: `\`\`\`\n${result}\n\`\`\`` }, { quoted: msg });
-        continue;
-      }
-
-      if (text.startsWith('/exec ') || text.startsWith('$ ')) {
-        const command = text.startsWith('$ ') ? text.slice(2).trim() : text.slice(6).trim();
-        let result;
-        try {
-          const { stdout, stderr } = await execAsync(command, { timeout: 10000 });
-          result = stdout || stderr || '(no output)';
-        } catch (err) {
-          result = `Error: ${err.message}`;
-        }
-        await sock.sendMessage(from, { text: `\`\`\`\n${result}\n\`\`\`` }, { quoted: msg });
-        continue;
-      }
-
-      if (text.toLowerCase() === '/uptime') {
-        await sock.sendMessage(from, {
-          text: `⏱ Uptime: ${formatUptime(process.uptime())}`
-        }, { quoted: msg });
-        continue;
-      }
-
-      if (text.toLowerCase() === '/ping') {
-        const pingStart = Date.now();
-        await sock.sendMessage(from, { text: '🏓 Pong!' }, { quoted: msg });
-        const latency = Date.now() - pingStart;
-        await sock.sendMessage(from, { text: `🏓 Pong! ${latency}ms` }, { quoted: msg });
-        continue;
-      }
-
-      if (text.toLowerCase() === '/info') {
-        const info = [
-          `🤖 Bot Info`,
-          `├ JID     : ${sock.user?.id}`,
-          `├ Name    : ${sock.user?.name}`,
-          `├ Version : ${version.join('.')}`,
-          `├ Uptime  : ${formatUptime(process.uptime())}`,
-          `├ Memory  : ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB`,
-          `└ Node    : ${process.version}`
-        ].join('\n');
-        await sock.sendMessage(from, { text: info }, { quoted: msg });
-        continue;
-      }
-
-      if (text.toLowerCase() === '/restart') {
-        await sock.sendMessage(from, { text: '🔄 Restarting...' }, { quoted: msg });
-        process.exit(0);
-      }
-
-      if (text.toLowerCase() === '/memory') {
-        const mem = process.memoryUsage();
-        const info = [
-          `🧠 Memory Usage`,
-          `├ RSS       : ${(mem.rss / 1024 / 1024).toFixed(2)} MB`,
-          `├ Heap Used : ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB`,
-          `├ Heap Total: ${(mem.heapTotal / 1024 / 1024).toFixed(2)} MB`,
-          `└ External  : ${(mem.external / 1024 / 1024).toFixed(2)} MB`
-        ].join('\n');
-        await sock.sendMessage(from, { text: info }, { quoted: msg });
-        continue;
-      }
-
-      if (text.toLowerCase() === '/help') {
-        const help = [
-          `📋 Self Commands`,
-          `├ /uptime        - Uptime bot`,
-          `├ /ping          - Latency bot`,
-          `├ /info          - Info lengkap bot`,
-          `├ /memory        - Memory usage`,
-          `├ /restart       - Restart bot`,
-          `├ /eval | =>     - Jalankan kode JS`,
-          `├ /exec | $      - Jalankan shell command`,
-          `└ /invite        - Kirim invite newsletter`
-        ].join('\n');
-        await sock.sendMessage(from, { text: help }, { quoted: msg });
-        continue;
-      }
+      await handleMessage(sock, msg, version, pool);
     }
   });
 }
 
-const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({
-    status: 'ok',
-    uptime: formatUptime(process.uptime()),
-    memory: `${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB`,
-    version: version.join('.')
-  }));
-});
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`HTTP server running on port ${PORT}`));
-server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`Port ${PORT} already in use`);
-    process.exit(1);
-  } else {
-    console.error('HTTP server error:', err);
-  }
-});
-
 start();
-
-function getChatType(remoteJid) {
-  if (isJidGroup(remoteJid)) return 'group';
-  if (isJidNewsletter(remoteJid)) return 'newsletter';
-  if (isJidBroadcast(remoteJid)) return 'broadcast';
-  if (isPnUser(remoteJid)) return 'private';
-  if (remoteJid.endsWith('@lid')) return 'private';
-  return 'unknown';
-}
-
-function getSender(msg) {
-  const { remoteJid, participant, fromMe } = msg.key;
-
-  if (isJidGroup(remoteJid)) {
-    if (fromMe) return getOwnerJids()[0];
-    return participant ?? remoteJid;
-  }
-
-  if (fromMe) return getOwnerJids()[0];
-
-  return remoteJid;
-}
-
-function getSenderAlt(msg) {
-  const { remoteJid, remoteJidAlt, participantAlt, fromMe } = msg.key;
-
-  if (isJidGroup(remoteJid)) {
-    if (fromMe) return getOwnerJids()[1];
-    return participantAlt ?? null;
-  }
-
-  if (fromMe) return getOwnerJids()[1];
-
-  return remoteJidAlt ?? null;
-}
-
-function getPhoneNumber(jid) {
-  if (!jid) return null;
-  return jid.split('@')[0];
-}
-
-function isFromOwner(sender, senderAlt) {
-  const ownerJids = getOwnerJids();
-  return ownerJids.includes(sender) || ownerJids.includes(senderAlt);
-}
-
-function safeStringify(obj, indent = 2) {
-  const seen = new WeakSet();
-  return JSON.stringify(obj, (key, value) => {
-    if (typeof value === 'object' && value !== null) {
-      if (seen.has(value)) return '[Circular]';
-      seen.add(value);
-    }
-    if (typeof value === 'function') return `[Function: ${value.name || 'anonymous'}]`;
-    if (typeof value === 'bigint') return value.toString();
-    return value;
-  }, indent);
-}
-
-function formatUptime(seconds) {
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  return `${d}d ${h}h ${m}m ${s}s`;
-}
