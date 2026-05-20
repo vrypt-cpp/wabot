@@ -16,9 +16,9 @@ const { Pool } = pkg;
 const pool = new Pool({
   host: process.env.PG_HOST || 'localhost',
   port: process.env.PG_PORT || 5432,
-  database: process.env.PG_DATABASE || 'neondb',
-  user: process.env.PG_USER || 'neondb_owner',
-  password: process.env.PG_PASSWORD || 'my_secure_password',
+  database: process.env.PG_DATABASE || 'database_name',
+  user: process.env.PG_USER || 'postgres_user',
+  password: process.env.PG_PASSWORD,
   ssl: { rejectUnauthorized: false }
 });
 
