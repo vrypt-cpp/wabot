@@ -22,7 +22,7 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-const PHONE_NUMBER = process.env.PHONE_NUMBER || '6285185985868';
+const PHONE_NUMBER = process.env.PHONE_NUMBER || '62xxxxx';
 
 let version = [];
 
