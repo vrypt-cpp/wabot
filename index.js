@@ -91,10 +91,10 @@ async function start() {
       const isOwner = isFromOwner(sender, senderAlt);
 
       if (chatType === 'group') {
-        console.log(`[GROUP] ${from} | sender: ${sender} | senderAlt: ${senderAlt}`);
+        console.log(`[GROUP] ${from} | sender: ${sender} | senderAlt: ${senderAlt} | isOwner: ${isOwner}`);
       } else if (chatType === 'private') {
         const mode = msg.key.addressingMode || 'pn';
-        console.log(`[PRIVATE (${mode})] sender: ${sender} | alt: ${senderAlt}`);
+        console.log(`[PRIVATE (${mode})] sender: ${sender} | alt: ${senderAlt} | isOwner: ${isOwner}`);
       } else if (chatType === 'newsletter') {
         console.log(`[NEWSLETTER] ${from}`);
       } else if (chatType === 'broadcast') {
@@ -103,7 +103,9 @@ async function start() {
         console.log(`[UNKNOWN] ${from}`);
       }
 
-      if (text.toLowerCase() === '/invite' && chatType === 'private' && isOwner) {
+      if (!isOwner) continue;
+
+      if (text.toLowerCase() === '/invite' && chatType === 'private') {
         const inviteExpiration = String(Math.floor(Date.now() / 1000) + 604800);
         await sock.relayMessage(from, {
           newsletterAdminInviteMessage: {
@@ -113,12 +115,10 @@ async function start() {
             inviteExpiration
           }
         }, { messageId: sock.generateMessageTag() });
+        continue;
       }
 
-      const isEval = text.startsWith('/eval ') || text.startsWith('=> ');
-      const isExec = text.startsWith('/exec ') || text.startsWith('$ ');
-
-      if (isEval && isOwner) {
+      if (text.startsWith('/eval ') || text.startsWith('=> ')) {
         const code = text.startsWith('=> ') ? text.slice(3).trim() : text.slice(6).trim();
         let result;
         try {
@@ -132,23 +132,19 @@ async function start() {
           if (result === undefined) result = 'undefined';
           else if (result === null) result = 'null';
           else if (typeof result === 'object') {
-            try {
-              result = JSON.stringify(result, null, 2);
-            } catch {
-              result = safeStringify(result);
-            }
+            try { result = JSON.stringify(result, null, 2); }
+            catch { result = safeStringify(result); }
           } else {
             result = String(result);
           }
         } catch (err) {
           result = `Error: ${err.message}`;
         }
-        await sock.sendMessage(from, {
-          text: `\`\`\`\n${result}\n\`\`\``
-        }, { quoted: msg });
+        await sock.sendMessage(from, { text: `\`\`\`\n${result}\n\`\`\`` }, { quoted: msg });
+        continue;
       }
 
-      if (isExec && isOwner) {
+      if (text.startsWith('/exec ') || text.startsWith('$ ')) {
         const command = text.startsWith('$ ') ? text.slice(2).trim() : text.slice(6).trim();
         let result;
         try {
@@ -157,69 +153,71 @@ async function start() {
         } catch (err) {
           result = `Error: ${err.message}`;
         }
-        await sock.sendMessage(from, {
-          text: `\`\`\`\n${result}\n\`\`\``
-        }, { quoted: msg });
+        await sock.sendMessage(from, { text: `\`\`\`\n${result}\n\`\`\`` }, { quoted: msg });
+        continue;
       }
 
-      if (isOwner) {
-        if (text.toLowerCase() === '/uptime') {
-          await sock.sendMessage(from, {
-            text: `⏱ Uptime: ${formatUptime(process.uptime())}`
-          }, { quoted: msg });
-        }
+      if (text.toLowerCase() === '/uptime') {
+        await sock.sendMessage(from, {
+          text: `⏱ Uptime: ${formatUptime(process.uptime())}`
+        }, { quoted: msg });
+        continue;
+      }
 
-        if (text.toLowerCase() === '/ping') {
-          const start = Date.now();
-          await sock.sendMessage(from, { text: '🏓 Pong!' }, { quoted: msg });
-          const latency = Date.now() - start;
-          await sock.sendMessage(from, { text: `🏓 Pong! ${latency}ms` }, { quoted: msg });
-        }
+      if (text.toLowerCase() === '/ping') {
+        const pingStart = Date.now();
+        await sock.sendMessage(from, { text: '🏓 Pong!' }, { quoted: msg });
+        const latency = Date.now() - pingStart;
+        await sock.sendMessage(from, { text: `🏓 Pong! ${latency}ms` }, { quoted: msg });
+        continue;
+      }
 
-        if (text.toLowerCase() === '/info') {
-          const info = [
-            `🤖 Bot Info`,
-            `├ JID     : ${sock.user?.id}`,
-            `├ Name    : ${sock.user?.name}`,
-            `├ Version : ${version.join('.')}`,
-            `├ Uptime  : ${formatUptime(process.uptime())}`,
-            `├ Memory  : ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB`,
-            `└ Node    : ${process.version}`
-          ].join('\n');
-          await sock.sendMessage(from, { text: info }, { quoted: msg });
-        }
+      if (text.toLowerCase() === '/info') {
+        const info = [
+          `🤖 Bot Info`,
+          `├ JID     : ${sock.user?.id}`,
+          `├ Name    : ${sock.user?.name}`,
+          `├ Version : ${version.join('.')}`,
+          `├ Uptime  : ${formatUptime(process.uptime())}`,
+          `├ Memory  : ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB`,
+          `└ Node    : ${process.version}`
+        ].join('\n');
+        await sock.sendMessage(from, { text: info }, { quoted: msg });
+        continue;
+      }
 
-        if (text.toLowerCase() === '/restart') {
-          await sock.sendMessage(from, { text: '🔄 Restarting...' }, { quoted: msg });
-          process.exit(0);
-        }
+      if (text.toLowerCase() === '/restart') {
+        await sock.sendMessage(from, { text: '🔄 Restarting...' }, { quoted: msg });
+        process.exit(0);
+      }
 
-        if (text.toLowerCase() === '/memory') {
-          const mem = process.memoryUsage();
-          const info = [
-            `🧠 Memory Usage`,
-            `├ RSS       : ${(mem.rss / 1024 / 1024).toFixed(2)} MB`,
-            `├ Heap Used : ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB`,
-            `├ Heap Total: ${(mem.heapTotal / 1024 / 1024).toFixed(2)} MB`,
-            `└ External  : ${(mem.external / 1024 / 1024).toFixed(2)} MB`
-          ].join('\n');
-          await sock.sendMessage(from, { text: info }, { quoted: msg });
-        }
+      if (text.toLowerCase() === '/memory') {
+        const mem = process.memoryUsage();
+        const info = [
+          `🧠 Memory Usage`,
+          `├ RSS       : ${(mem.rss / 1024 / 1024).toFixed(2)} MB`,
+          `├ Heap Used : ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB`,
+          `├ Heap Total: ${(mem.heapTotal / 1024 / 1024).toFixed(2)} MB`,
+          `└ External  : ${(mem.external / 1024 / 1024).toFixed(2)} MB`
+        ].join('\n');
+        await sock.sendMessage(from, { text: info }, { quoted: msg });
+        continue;
+      }
 
-        if (text.toLowerCase() === '/help') {
-          const help = [
-            `📋 Self Commands`,
-            `├ /uptime        - Uptime bot`,
-            `├ /ping          - Latency bot`,
-            `├ /info          - Info lengkap bot`,
-            `├ /memory        - Memory usage`,
-            `├ /restart       - Restart bot`,
-            `├ /eval | =>     - Jalankan kode JS`,
-            `├ /exec | $      - Jalankan shell command`,
-            `└ /invite        - Kirim invite newsletter`
-          ].join('\n');
-          await sock.sendMessage(from, { text: help }, { quoted: msg });
-        }
+      if (text.toLowerCase() === '/help') {
+        const help = [
+          `📋 Self Commands`,
+          `├ /uptime        - Uptime bot`,
+          `├ /ping          - Latency bot`,
+          `├ /info          - Info lengkap bot`,
+          `├ /memory        - Memory usage`,
+          `├ /restart       - Restart bot`,
+          `├ /eval | =>     - Jalankan kode JS`,
+          `├ /exec | $      - Jalankan shell command`,
+          `└ /invite        - Kirim invite newsletter`
+        ].join('\n');
+        await sock.sendMessage(from, { text: help }, { quoted: msg });
+        continue;
       }
     }
   });
@@ -260,7 +258,10 @@ function getChatType(remoteJid) {
 function getSender(msg) {
   const { remoteJid, participant, fromMe } = msg.key;
 
-  if (isJidGroup(remoteJid)) return participant;
+  if (isJidGroup(remoteJid)) {
+    if (fromMe) return getOwnerJids()[0];
+    return participant ?? remoteJid;
+  }
 
   if (fromMe) return getOwnerJids()[0];
 
@@ -270,11 +271,14 @@ function getSender(msg) {
 function getSenderAlt(msg) {
   const { remoteJid, remoteJidAlt, participantAlt, fromMe } = msg.key;
 
-  if (isJidGroup(remoteJid)) return participantAlt;
+  if (isJidGroup(remoteJid)) {
+    if (fromMe) return getOwnerJids()[1];
+    return participantAlt ?? null;
+  }
 
   if (fromMe) return getOwnerJids()[1];
 
-  return remoteJidAlt;
+  return remoteJidAlt ?? null;
 }
 
 function getPhoneNumber(jid) {
