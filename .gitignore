@@ -1,0 +1,74 @@
+# ========================
+# Environment & Secrets
+# ========================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ========================
+# Node.js
+# ========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+.npm
+.node_repl_history
+
+# ========================
+# WhatsApp Session / Auth
+# ========================
+.wwebjs_auth/
+.wwebjs_cache/
+auth_info/
+auth_info_multi/
+baileys_store.json
+session*/
+*.session
+wa-session/
+wwebjs_auth/
+
+# ========================
+# PostgreSQL / Database
+# ========================
+*.sql.bak
+*.dump
+pgdata/
+postgres-data/
+
+# ========================
+# OS Files
+# ========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ========================
+# Logs
+# ========================
+logs/
+*.log
+*.log.*
+
+# ========================
+# Editor / IDE
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ========================
+# Build / Output
+# ========================
+dist/
+build/
+.cache/
+tmp/
+temp/
