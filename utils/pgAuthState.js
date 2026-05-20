@@ -10,9 +10,15 @@ const TABLE_DDL = `
   )
 `;
 
+const MIGRATE_DDL = `
+  ALTER TABLE wa_sessions
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+`;
+
 export async function usePgAuthState(pool, sessionId = 'default') {
   await pool.query(TABLE_DDL);
-
+  await pool.query(MIGRATE_DDL);
+  
   const cache = new Map();
 
   const cacheKey   = (key) => `${sessionId}:${key}`;
