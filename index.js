@@ -60,7 +60,13 @@ async function start() {
       const code = lastDisconnect?.error?.output?.statusCode;
       if (code !== DisconnectReason.loggedOut) start();
     }
-    if (connection === 'open') console.log('Connected');
+    if (connection === 'open') {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log('Connected!');
+      await sock.sendMessage(PHONE_NUMBER, {
+        text: 'bot successfully connected!'
+      });
+    }
   });
 
   sock.ev.on('creds.update', saveCreds);
