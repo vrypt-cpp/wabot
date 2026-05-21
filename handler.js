@@ -1,17 +1,31 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { formatUptime, safeStringify } from './utils/format.js';
-import {
-  getChatType,
-  getSender,
-  getSenderAlt,
-  isFromOwner,
-  getPhoneNumber,
-} from './utils/jid.js';
+import { createLogger } from './utils/logger.js';
+import { getChatType, getSender, getSenderAlt, isFromOwner } from './utils/jid.js';
 
-const execAsync = promisify(exec);
+const log = createLogger('HANDLER');
 
-export async function handleMessage(sock, msg, version, pool) {
+const SLASH_PREFIX = '/';
+const ALIAS_PREFIXES = [
+  { prefix: '=> ', name: '=>' },
+  { prefix: '$ ',  name: '$'  },
+];
+
+function parseCommand(text) {
+  for (const { prefix, name } of ALIAS_PREFIXES) {
+    if (text.startsWith(prefix)) {
+      return { name, args: text.slice(prefix.length).trim() };
+    }
+  }
+
+  if (text.startsWith(SLASH_PREFIX)) {
+    const rest = text.slice(1).trimStart();
+    const [name, ...argParts] = rest.split(' ');
+    return { name: name.toLowerCase(), args: argParts.join(' ') };
+  }
+
+  return null;
+}
+
+export async function handleMessage(sock, msg, version, pool, registry) {
   if (!msg.message) return;
 
   const from = msg.key.remoteJid;
@@ -21,135 +35,37 @@ export async function handleMessage(sock, msg, version, pool) {
   const senderAlt = getSenderAlt(msg);
   const isOwner = isFromOwner(sender, senderAlt);
 
-  if (chatType === 'group') {
-    console.log(`[GROUP] ${from} | sender: ${sender} | senderAlt: ${senderAlt} | isOwner: ${isOwner}`);
-  } else if (chatType === 'private') {
-    const mode = msg.key.addressingMode || 'pn';
-    console.log(`[PRIVATE (${mode})] sender: ${sender} | alt: ${senderAlt} | isOwner: ${isOwner}`);
-  } else if (chatType === 'newsletter') {
-    console.log(`[NEWSLETTER] ${from}`);
-  } else if (chatType === 'broadcast') {
-    console.log(`[BROADCAST] ${from}`);
-  } else {
-    console.log(`[UNKNOWN] ${from}`);
+  switch (chatType) {
+    case 'group':      log.info('GROUP',      { from, sender, senderAlt, isOwner }); break;
+    case 'private':    log.info('PRIVATE',    { sender, senderAlt, isOwner });       break;
+    case 'newsletter': log.info('NEWSLETTER', { from });                             break;
+    case 'broadcast':  log.info('BROADCAST',  { from });                             break;
+    default:           log.warn('UNKNOWN',    { from });
   }
 
-  if (!isOwner) return;
+  const parsed = parseCommand(text);
+  if (!parsed) return;
 
-  if (text.toLowerCase() === '/invite' && chatType === 'private') {
-    const inviteExpiration = String(Math.floor(Date.now() / 1000) + 604800);
-    await sock.relayMessage(from, {
-      newsletterAdminInviteMessage: {
-        newsletterJid: '120363411786163149@newsletter',
-        newsletterName: 'Yapink Universe',
-        caption: "Accept this invitation to be an admin for my WhatsApp channel, 'tes'",
-        inviteExpiration
-      }
-    }, { messageId: sock.generateMessageTag() });
-    return;
-  }
+  const { name, args } = parsed;
+  const cmd = registry.find(name);
+  if (!cmd) return;
 
-  if (text.startsWith('/eval ') || text.startsWith('=> ')) {
-    const code = text.startsWith('=> ') ? text.slice(3).trim() : text.slice(6).trim();
-    let result;
-    try {
-      const fn = new Function(
-        'sock', 'msg', 'from', 'sender', 'senderAlt', 'pool',
-        'getChatType', 'getSender', 'getSenderAlt', 'isFromOwner', 'getPhoneNumber',
-        `return (async () => { try { return await eval(${JSON.stringify(code)}) } catch(e) { throw e } })()`
-      );
-      result = await fn(sock, msg, from, sender, senderAlt, pool, getChatType, getSender, getSenderAlt, isFromOwner, getPhoneNumber);
+  if (cmd.ownerOnly !== false && !isOwner) return;
 
-      if (result === undefined) result = 'undefined';
-      else if (result === null) result = 'null';
-      else if (typeof result === 'object') {
-        try { result = JSON.stringify(result, null, 2); }
-        catch { result = safeStringify(result); }
-      } else {
-        result = String(result);
-      }
-    } catch (err) {
-      result = `Error: ${err.message}`;
-    }
-    await sock.sendMessage(from, { text: `\`\`\`\n${result}\n\`\`\`` }, { quoted: msg });
-    return;
-  }
-
-  if (text.startsWith('/exec ') || text.startsWith('$ ')) {
-    const command = text.startsWith('$ ') ? text.slice(2).trim() : text.slice(6).trim();
-    let result;
-    try {
-      const { stdout, stderr } = await execAsync(command, { timeout: 10000 });
-      result = stdout || stderr || '(no output)';
-    } catch (err) {
-      result = `Error: ${err.message}`;
-    }
-    await sock.sendMessage(from, { text: `\`\`\`\n${result}\n\`\`\`` }, { quoted: msg });
-    return;
-  }
-
-  if (text.toLowerCase() === '/uptime') {
+  const scope = cmd.scope ?? 'all';
+  if (scope !== 'all' && scope !== chatType) {
     await sock.sendMessage(from, {
-      text: `⏱ Uptime: ${formatUptime(process.uptime())}`
+      text: `⚠️ Command /${name} hanya bisa di chat ${scope}.`
     }, { quoted: msg });
     return;
   }
 
-  if (text.toLowerCase() === '/ping') {
-    const pingStart = Date.now();
-    await sock.sendMessage(from, { text: '🏓 Pong!' }, { quoted: msg });
-    const latency = Date.now() - pingStart;
-    await sock.sendMessage(from, { text: `🏓 Pong! ${latency}ms` }, { quoted: msg });
-    return;
-  }
+  const ctx = { sock, msg, from, sender, senderAlt, isOwner, text, args, chatType, version, pool, registry };
 
-  if (text.toLowerCase() === '/info') {
-    const info = [
-      `🤖 Bot Info`,
-      `├ JID     : ${sock.user?.id}`,
-      `├ Name    : ${sock.user?.name}`,
-      `├ Version : ${version.join('.')}`,
-      `├ Uptime  : ${formatUptime(process.uptime())}`,
-      `├ Memory  : ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB`,
-      `└ Node    : ${process.version}`
-    ].join('\n');
-    await sock.sendMessage(from, { text: info }, { quoted: msg });
-    return;
+  try {
+    await cmd.execute(ctx);
+  } catch (err) {
+    log.error(`Error in "${name}"`, { detail: err.message });
+    await sock.sendMessage(from, { text: `❌ Error: ${err.message}` }, { quoted: msg });
   }
-
-  if (text.toLowerCase() === '/restart') {
-    await sock.sendMessage(from, { text: '🔄 Restarting...' }, { quoted: msg });
-    process.exit(0);
-  }
-
-  if (text.toLowerCase() === '/memory') {
-    const mem = process.memoryUsage();
-    const info = [
-      `🧠 Memory Usage`,
-      `├ RSS       : ${(mem.rss / 1024 / 1024).toFixed(2)} MB`,
-      `├ Heap Used : ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB`,
-      `├ Heap Total: ${(mem.heapTotal / 1024 / 1024).toFixed(2)} MB`,
-      `└ External  : ${(mem.external / 1024 / 1024).toFixed(2)} MB`
-    ].join('\n');
-    await sock.sendMessage(from, { text: info }, { quoted: msg });
-    return;
-  }
-
-  if (text.toLowerCase() === '/help') {
-    const help = [
-      `📋 Self Commands`,
-      `├ /uptime        - Uptime bot`,
-      `├ /ping          - Latency bot`,
-      `├ /info          - Info lengkap bot`,
-      `├ /memory        - Memory usage`,
-      `├ /restart       - Restart bot`,
-      `├ /eval | =>     - Jalankan kode JS`,
-      `├ /exec | $      - Jalankan shell command`,
-      `└ /invite        - Kirim invite newsletter`
-    ].join('\n');
-    await sock.sendMessage(from, { text: help }, { quoted: msg });
-    return;
-  }
-
-  console.log(JSON.stringify(msg, null, 2));
 }

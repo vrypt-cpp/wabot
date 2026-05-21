@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import {
   Browsers,
   makeWASocket,
@@ -8,10 +10,15 @@ import {
 import pkg from 'pg';
 import { usePgAuthState } from './utils/pgAuthState.js';
 import pino from 'pino';
-import { createHttpServer } from './server.js';
+import { createHttpServer, setBotState, incrementMessages } from './server.js';
 import { handleMessage } from './handler.js';
+import { createLogger } from './utils/logger.js';
+import { CommandRegistry } from './loader.js';
 
 const { Pool } = pkg;
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const log = createLogger('WA');
+const logProcess = createLogger('PROCESS');
 
 const pool = new Pool({
   host: process.env.PG_HOST || 'localhost',
@@ -34,43 +41,56 @@ const RECONNECT_CONFIG = {
 let version = [];
 let retryCount = 0;
 let isReconnecting = false;
+let registry;
 
 createHttpServer(() => version);
+setBotState({ pool, isReconnecting: false, retryCount });
+
+async function initRegistry(sock) {
+  registry = new CommandRegistry();
+  const dir = resolve(__dirname, 'commands');
+  await registry.loadDir(dir);
+  registry.watch(dir, {
+    sock,
+    from: PHONE_NUMBER + '@s.whatsapp.net',
+  }).catch(err => log.error('watch error', { detail: err.message }));
+}
 
 function getReconnectDelay() {
   const delay = Math.min(
     RECONNECT_CONFIG.baseDelay * Math.pow(RECONNECT_CONFIG.backoffMultiplier, retryCount),
     RECONNECT_CONFIG.maxDelay
   );
-  
   const jitter = delay * 0.2 * (Math.random() * 2 - 1);
   return Math.floor(delay + jitter);
 }
 
 async function scheduleReconnect(reason = 'unknown') {
   if (isReconnecting) {
-    console.log('[WA] Reconnect sudah dijadwalkan, skip.');
+    log.warn('Reconnect sudah dijadwalkan, skip.');
     return;
   }
 
   if (retryCount >= RECONNECT_CONFIG.maxRetries) {
-    console.error(`[WA] Gagal reconnect setelah ${RECONNECT_CONFIG.maxRetries} percobaan. Berhenti.`);
+    log.fatal(`Gagal reconnect setelah ${RECONNECT_CONFIG.maxRetries} percobaan. Berhenti.`);
     process.exit(1);
   }
 
   isReconnecting = true;
   retryCount++;
+  setBotState({ isReconnecting: true, retryCount });
 
   const delay = getReconnectDelay();
-  console.log(`[WA] Disconnect (${reason}). Reconnect ke-${retryCount}/${RECONNECT_CONFIG.maxRetries} dalam ${delay}ms...`);
+  log.warn(`Disconnect (${reason}). Reconnect ke-${retryCount}/${RECONNECT_CONFIG.maxRetries} dalam ${delay}ms...`);
 
   await new Promise(resolve => setTimeout(resolve, delay));
   isReconnecting = false;
+  setBotState({ isReconnecting: false, retryCount });
 
   try {
     await start();
   } catch (err) {
-    console.error('[WA] Error saat reconnect:', err);
+    log.error('Error saat reconnect:', { detail: err.message });
     await scheduleReconnect('reconnect_error');
   }
 }
@@ -80,11 +100,11 @@ async function start() {
   const { version: v, isLatest } = await fetchLatestBaileysVersion();
   version = v;
 
-  console.log(`[WA] Menggunakan WA v${version.join('.')}, isLatest: ${isLatest}`);
+  log.info(`Menggunakan WA v${version.join('.')}`, { isLatest });
 
   const sock = makeWASocket({
     browser: Browsers.macOS('Edge'),
-    logger: pino({ level: 'error' }),
+    logger: pino({ level: 'silent' }),
     auth: state,
     version,
     syncFullHistory: false,
@@ -92,89 +112,84 @@ async function start() {
     generateHighQualityLinkPreview: true,
   });
 
+  await initRegistry(sock);
+
   if (!sock.authState.creds.registered) {
     try {
       await new Promise(resolve => setTimeout(resolve, 2000));
-      const PAIRING_CODE = await sock.requestPairingCode(PHONE_NUMBER);
-      console.log('[WA] PAIRING CODE:', PAIRING_CODE);
+      const PAIRING_CODE = await sock.requestPairingCode(PHONE_NUMBER, 'VRYPTBOT');
+      log.info(`PAIRING CODE: ${PAIRING_CODE}`);
     } catch (err) {
-      console.error('[WA] Error meminta pairing code:', err);
+      log.error('Error meminta pairing code', { detail: err.message });
     }
   }
 
-  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
     const code = lastDisconnect?.error?.output?.statusCode;
     const errorMessage = lastDisconnect?.error?.message || 'tidak diketahui';
 
     if (connection === 'connecting') {
-      console.log('[WA] Sedang menghubungkan...');
+      setBotState({ connection: 'connecting' });
+      log.info('Sedang menghubungkan...');
     }
 
     if (connection === 'open') {
       retryCount = 0;
-      console.log('[WA] Terhubung!');
+      setBotState({ connection: 'open', retryCount: 0, lastConnectedAt: new Date().toISOString() });
+      log.info('Terhubung!');
       try {
         await new Promise(resolve => setTimeout(resolve, 2000));
         await sock.sendMessage(PHONE_NUMBER + '@s.whatsapp.net', {
           text: '✅ Bot berhasil terhubung!'
         });
       } catch (err) {
-        console.error('[WA] Gagal mengirim notifikasi koneksi:', err);
+        log.error('Gagal mengirim notifikasi koneksi', { detail: err.message });
       }
     }
 
     if (connection === 'close') {
-      console.warn(`[WA] Koneksi terputus. Kode: ${code}, Pesan: ${errorMessage}`);
+      setBotState({
+        connection: 'close',
+        retryCount,
+        isReconnecting: true,
+        lastDisconnectReason: `${code}`,
+      });
+      log.warn('Koneksi terputus', { code, pesan: errorMessage });
 
       switch (code) {
         case DisconnectReason.loggedOut:
-          console.error('[WA] Sesi logout. Hapus sesi dan daftarkan ulang.');
-          // Opsional: hapus sesi dari DB di sini
+          log.fatal('Sesi logout. Hapus sesi dan daftarkan ulang.');
           process.exit(1);
           break;
-
         case DisconnectReason.badSession:
-          console.error('[WA] Sesi rusak (badSession). Perlu daftar ulang.');
+          log.fatal('Sesi rusak (badSession). Perlu daftar ulang.');
           process.exit(1);
           break;
-
         case DisconnectReason.multideviceMismatch:
-          console.error('[WA] Multidevice mismatch. Perlu daftar ulang.');
+          log.fatal('Multidevice mismatch. Perlu daftar ulang.');
           process.exit(1);
           break;
-
         case DisconnectReason.connectionClosed:
-          console.warn('[WA] Koneksi ditutup, mencoba reconnect...');
           await scheduleReconnect('connectionClosed');
           break;
-
         case DisconnectReason.connectionLost:
-          console.warn('[WA] Koneksi hilang (jaringan?), mencoba reconnect...');
           await scheduleReconnect('connectionLost');
           break;
-
         case DisconnectReason.connectionReplaced:
-          console.error('[WA] Koneksi digantikan perangkat lain. Bot dihentikan.');
+          log.fatal('Koneksi digantikan perangkat lain. Bot dihentikan.');
           process.exit(1);
           break;
-
         case DisconnectReason.timedOut:
-          console.warn('[WA] Koneksi timeout, mencoba reconnect...');
           await scheduleReconnect('timedOut');
           break;
-
         case DisconnectReason.restartRequired:
-          console.warn('[WA] Restart diperlukan oleh server WA.');
           await scheduleReconnect('restartRequired');
           break;
-
         case 428:
-          console.warn('[WA] Koneksi tiba-tiba terputus (428), mencoba reconnect...');
           await scheduleReconnect('unexpectedClose_428');
           break;
-
         default:
-          console.warn(`[WA] Disconnect tidak dikenal (code: ${code}), mencoba reconnect...`);
+          log.warn('Disconnect tidak dikenal', { code });
           await scheduleReconnect(`unknown_${code}`);
           break;
       }
@@ -186,17 +201,23 @@ async function start() {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
     for (const msg of messages) {
-      await handleMessage(sock, msg, version, pool);
+      try {
+        await handleMessage(sock, msg, version, pool, registry);
+        incrementMessages(true);
+      } catch (err) {
+        log.error('Gagal memproses pesan', { detail: err.message });
+        incrementMessages(false);
+      }
     }
   });
 }
 
 process.on('uncaughtException', (err) => {
-  console.error('[PROCESS] uncaughtException:', err);
+  logProcess.fatal('uncaughtException', { detail: err.message });
 });
 
 process.on('unhandledRejection', (reason) => {
-  console.error('[PROCESS] unhandledRejection:', reason);
+  logProcess.error('unhandledRejection', { reason: String(reason) });
 });
 
 start();
