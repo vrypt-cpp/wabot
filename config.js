@@ -8,6 +8,8 @@ export const config = {
   },
   settings: {
     prefix: ['.', '#', '/', '&'],
+    autoRead: true,
+    markOnline: true,
     title: 'VryptBot || automation WhatsApp bot',
     body: 'Simple modern WhatsApp bot powered by Baileys.',
     footer: 'copyright © 2026 VryptDev',
