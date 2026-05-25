@@ -37,14 +37,15 @@ function buildPayload(getVersion) {
   let poolStats = null;
   if (botState.pool) {
     try {
-      const internalPool = botState.pool.pool;
+      const p = botState.pool.pool;
+      const total   = p._allConnections.length;
+      const free    = p._freeConnections.length;
+      const waiting = p._connectionQueue.length;
       poolStats = {
-        total:   internalPool._allConnections.length,
-        used:    internalPool._acquiringConnections.length + internalPool._freeConnections.length === 0
-                   ? internalPool._allConnections.length
-                   : internalPool._allConnections.length - internalPool._freeConnections.length,
-        idle:    internalPool._freeConnections.length,
-        waiting: internalPool._connectionQueue.length,
+        total,
+        used:    total - free,
+        idle:    free,
+        waiting,
       };
     } catch {
       poolStats = { error: 'stats unavailable' };
