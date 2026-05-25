@@ -9,6 +9,7 @@ const botState = {
   retryCount: 0,
   maxRetries: 10,
   isReconnecting: false,
+  isRestarting: false,
   lastDisconnectReason: null,
   lastConnectedAt: null,
   messagesProcessed: 0,

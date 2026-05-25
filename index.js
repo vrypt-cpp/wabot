@@ -140,10 +140,12 @@ async function start() {
     }
 
     if (connection === 'close') {
+      if (getBotState().isRestarting) return;
+      
       setBotState({
         connection: 'close',
         retryCount: getBotState().retryCount,
-        isReconnecting: true,
+        isReconnecting: false,
         lastDisconnectReason: `${code}`,
       });
       log.warn('Koneksi terputus', { code, pesan: errorMessage });
