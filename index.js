@@ -142,7 +142,7 @@ async function start() {
     if (connection === 'close') {
       setBotState({
         connection: 'close',
-        retryCount,
+        retryCount: getBotState().retryCount,
         isReconnecting: true,
         lastDisconnectReason: `${code}`,
       });
