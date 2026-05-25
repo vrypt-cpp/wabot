@@ -5,21 +5,81 @@ import { createLogger } from './utils/logger.js';
 
 const log = createLogger('LOADER');
 
+const VALID_CATEGORIES = ['utility', 'fun', 'admin', 'info', 'media', 'moderation'];
+const VALID_SCOPES = ['all', 'group', 'private'];
+
 export class CommandRegistry {
   constructor() {
     this._commands = new Map();
     this._fileToNames = new Map();
     this._watchDir = null;
+    this._cooldowns = new Map();
+  }
+
+  _validate(meta, filePath) {
+    const file = basename(filePath);
+    const required = ['name', 'execute', 'description', 'category'];
+    const missing = required.filter(k => !meta[k]);
+
+    if (missing.length) {
+      log.warn(`${file} missing required fields: ${missing.join(', ')}`);
+      return false;
+    }
+
+    if (typeof meta.execute !== 'function') {
+      log.warn(`${file}: execute must be a function`);
+      return false;
+    }
+
+    if (!VALID_CATEGORIES.includes(meta.category)) {
+      log.warn(`${file}: invalid category "${meta.category}" — must be one of: ${VALID_CATEGORIES.join(', ')}`);
+      return false;
+    }
+
+    if (meta.scope !== undefined && !VALID_SCOPES.includes(meta.scope)) {
+      log.warn(`${file}: invalid scope "${meta.scope}" — must be: ${VALID_SCOPES.join(', ')}`);
+      return false;
+    }
+
+    if (meta.ownerOnly !== undefined && typeof meta.ownerOnly !== 'boolean') {
+      log.warn(`${file}: ownerOnly must be a boolean`);
+      return false;
+    }
+
+    if (meta.cooldown !== undefined && (typeof meta.cooldown !== 'number' || meta.cooldown < 0)) {
+      log.warn(`${file}: cooldown must be a non-negative number`);
+      return false;
+    }
+
+    if (meta.hidden !== undefined && typeof meta.hidden !== 'boolean') {
+      log.warn(`${file}: hidden must be a boolean`);
+      return false;
+    }
+
+    return true;
+  }
+
+  _applyDefaults(meta) {
+    return {
+      ownerOnly: false,
+      scope: 'all',
+      cooldown: 0,
+      hidden: false,
+      ...meta,
+    };
   }
 
   register(meta, filePath) {
     const names = Array.isArray(meta.name) ? meta.name : [meta.name];
+    const enriched = this._applyDefaults(meta);
+
     for (const name of names) {
-      if (this._commands.has(name)) log.warn(`Duplicate "${name}" — overwriting`);
-      this._commands.set(name.toLowerCase(), meta);
+      if (this._commands.has(name.toLowerCase())) log.warn(`Duplicate "${name}" — overwriting`);
+      this._commands.set(name.toLowerCase(), enriched);
     }
+
     if (filePath) this._fileToNames.set(filePath, names.map(n => n.toLowerCase()));
-    log.info(`Registered: ${names.join(', ')}`);
+    log.info(`Registered: ${names.join(', ')} [${enriched.category}] scope=${enriched.scope} ownerOnly=${enriched.ownerOnly}`);
   }
 
   _unregisterFile(filePath) {
@@ -34,10 +94,12 @@ export class CommandRegistry {
     try {
       const mod = await import(url);
       const meta = mod.default;
-      if (!meta || typeof meta.execute !== 'function') {
-        log.warn(`Skipping ${basename(filePath)}: no valid default export`);
+
+      if (!meta || !this._validate(meta, filePath)) {
+        log.warn(`Skipping ${basename(filePath)}: failed validation`);
         return null;
       }
+
       return meta;
     } catch (err) {
       log.error(`Failed to load ${basename(filePath)}: ${err.message}`);
@@ -110,11 +172,32 @@ export class CommandRegistry {
     }
   }
 
+  isOnCooldown(name, userId) {
+    const key = `${name}:${userId}`;
+    const expires = this._cooldowns.get(key);
+    if (!expires) return false;
+    if (Date.now() < expires) return true;
+    this._cooldowns.delete(key);
+    return false;
+  }
+
+  setCooldown(name, userId, seconds) {
+    if (!seconds || seconds <= 0) return;
+    this._cooldowns.set(`${name}:${userId}`, Date.now() + seconds * 1000);
+  }
+
   find(name) {
     return this._commands.get(name.toLowerCase());
   }
 
-  all() {
-    return [...new Set(this._commands.values())];
+  all({ includeHidden = false, category = null } = {}) {
+    const unique = [...new Set(this._commands.values())];
+    return unique
+      .filter(cmd => includeHidden || !cmd.hidden)
+      .filter(cmd => !category || cmd.category === category);
+  }
+
+  categories() {
+    return [...new Set(this.all({ includeHidden: false }).map(cmd => cmd.category))];
   }
 }
