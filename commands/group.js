@@ -154,6 +154,23 @@ const SUBCOMMANDS = {
     }, { quoted: msg });
   },
 
+  async delete(sock, from, msg, sender) {
+    if (!await guardAdmin(sock, from, sender, msg)) return;
+    if (!await guardBotAdmin(sock, from, msg)) return;
+
+    const ctx = msg.message?.extendedTextMessage?.contextInfo;
+    if (!ctx?.stanzaId) return send(sock, from, '❌ Reply pesan yang ingin dihapus.', msg);
+
+    const targetKey = {
+      remoteJid: from,
+      id: ctx.stanzaId,
+      participant: ctx.participant,
+      fromMe: ctx.participant === sock.user?.id,
+    };
+
+    await sock.sendMessage(from, { delete: targetKey });
+  },
+
   async leave(sock, from, msg, sender, args, isOwner) {
     if (!isOwner) return send(sock, from, '❌ Hanya owner bot yang bisa menggunakan command ini.', msg);
 
@@ -175,6 +192,7 @@ const HELP_TEXT = [
   '├ /group revoke           — Reset link undangan',
   '├ /group info             — Info grup',
   '├ /group tagall           — Tag semua member',
+  '├ /group delete           — Hapus pesan (reply)',
   '└ /group leave            — Bot keluar grup (owner only)',
 ].join('\n');
 
