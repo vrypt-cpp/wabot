@@ -1,12 +1,9 @@
 import { createLogger } from './utils/logger.js';
 import { getChatType, getSender, getSenderAlt, isFromOwner } from './utils/jid.js';
 import { config } from './config.js';
-
 const log = createLogger('HANDLER');
-
 function extractText(message) {
   if (!message) return '';
-
   return (
     message.conversation                                          ??
     message.extendedTextMessage?.text                            ??
@@ -23,10 +20,8 @@ function extractText(message) {
     ''
   );
 }
-
 function parseCommand(text) {
   const prefixes = config.settings.prefix;
-
   for (const prefix of prefixes) {
     if (text.startsWith(prefix)) {
       const rest = text.slice(prefix.length).trimStart();
@@ -34,20 +29,16 @@ function parseCommand(text) {
       return { name: name.toLowerCase(), args: argParts.join(' ') };
     }
   }
-
   return null;
 }
-
 export async function handleMessage(sock, msg, version, pool, registry) {
   if (!msg.message) return;
-
   const from = msg.key.remoteJid;
   const text = extractText(msg.message);
   const chatType = getChatType(from);
-  const sender = getSender(msg);
-  const senderAlt = getSenderAlt(msg);
-  const isOwner = isFromOwner(sender, senderAlt);
-
+  const sender    = getSender(msg, sock);
+  const senderAlt = getSenderAlt(msg, sock);
+  const isOwner   = isFromOwner(sender, senderAlt);
   switch (chatType) {
     case 'group':      log.info('GROUP',      { from, sender, senderAlt, isOwner }); break;
     case 'private':    log.info('PRIVATE',    { sender, senderAlt, isOwner });       break;
@@ -55,16 +46,12 @@ export async function handleMessage(sock, msg, version, pool, registry) {
     case 'broadcast':  log.info('BROADCAST',  { from });                             break;
     default:           log.warn('UNKNOWN',    { from });
   }
-
   const parsed = parseCommand(text);
   if (!parsed) return;
-
   const { name, args } = parsed;
   const cmd = registry.find(name);
   if (!cmd) return;
-
   if (cmd.ownerOnly && !isOwner) return;
-
   const scope = cmd.scope ?? 'all';
   if (scope !== 'all' && scope !== chatType) {
     await sock.sendMessage(from, {
@@ -72,7 +59,6 @@ export async function handleMessage(sock, msg, version, pool, registry) {
     }, { quoted: msg });
     return;
   }
-
   if (registry.isOnCooldown(name, sender)) {
     const key = `${name}:${sender}`;
     const remaining = Math.ceil((registry._cooldowns.get(key) - Date.now()) / 1000);
@@ -81,11 +67,8 @@ export async function handleMessage(sock, msg, version, pool, registry) {
     }, { quoted: msg });
     return;
   }
-
   registry.setCooldown(name, sender, cmd.cooldown);
-
   const ctx = { sock, msg, from, sender, senderAlt, isOwner, text, args, chatType, version, pool, registry };
-
   try {
     await cmd.execute(ctx);
   } catch (err) {
