@@ -1,6 +1,11 @@
 export default {
   name: 'restart',
-  description: 'Restart bot',
+  description: 'Restart proses bot dan tutup semua koneksi',
+  category: 'admin',
+  ownerOnly: true,
+  scope: 'all',
+  cooldown: 0,
+  hidden: true,
 
   async execute({ sock, msg, from, pool }) {
     await sock.sendMessage(from, { text: '🔄 Restarting...' }, { quoted: msg });
