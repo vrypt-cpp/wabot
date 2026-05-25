@@ -1,7 +1,7 @@
 {
   "name": "wabot",
   "version": "1.0.0",
-  "description": "",
+  "description": "Simple WhatsApp bot built with @whiskeysockets/baileys, lightweight, and customizable automation using Node.js.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -10,7 +10,7 @@
     "type": "git",
     "url": "git+https://github.com/vrypt-cpp/wabot.git"
   },
-  "keywords": [],
+  "keywords": ["whatsapp-bot", "bot-wa", "baileys-bot"],
   "author": "vrypt-cpp",
   "license": "MIT",
   "type": "module",
