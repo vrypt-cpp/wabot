@@ -9,25 +9,17 @@ import {
 } from '@whiskeysockets/baileys';
 import pkg from 'pg';
 import { usePgAuthState } from './utils/pgAuthState.js';
+import { useMysqlAuthState } from './utils/mysqlAuthState.js'
 import pino from 'pino';
 import { createHttpServer, setBotState, incrementMessages } from './server.js';
 import { handleMessage } from './handler.js';
 import { createLogger } from './utils/logger.js';
 import { CommandRegistry } from './loader.js';
+import { pool } from './utils/mysqlPool.js';
 
-const { Pool } = pkg;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const log = createLogger('WA');
 const logProcess = createLogger('PROCESS');
-
-const pool = new Pool({
-  host: process.env.PG_HOST || 'localhost',
-  port: process.env.PG_PORT || 5432,
-  database: process.env.PG_DATABASE || 'database_name',
-  user: process.env.PG_USER || 'postgres_user',
-  password: process.env.PG_PASSWORD,
-  ssl: { rejectUnauthorized: false }
-});
 
 const PHONE_NUMBER = process.env.PHONE_NUMBER || '62xxxxx';
 
@@ -96,7 +88,7 @@ async function scheduleReconnect(reason = 'unknown') {
 }
 
 async function start() {
-  const { state, saveCreds } = await usePgAuthState(pool, 'session-1');
+  const { state, saveCreds, removeSession } = await useMysqlAuthState(pool, 'session-1');
   const { version: v, isLatest } = await fetchLatestBaileysVersion();
   version = v;
 
@@ -159,14 +151,17 @@ async function start() {
       switch (code) {
         case DisconnectReason.loggedOut:
           log.fatal('Sesi logout. Hapus sesi dan daftarkan ulang.');
+          await removeSession();
           process.exit(1);
           break;
         case DisconnectReason.badSession:
           log.fatal('Sesi rusak (badSession). Perlu daftar ulang.');
+          await removeSession();
           process.exit(1);
           break;
         case DisconnectReason.multideviceMismatch:
           log.fatal('Multidevice mismatch. Perlu daftar ulang.');
+          await removeSession();
           process.exit(1);
           break;
         case DisconnectReason.connectionClosed:
