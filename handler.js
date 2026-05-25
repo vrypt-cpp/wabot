@@ -50,7 +50,7 @@ export async function handleMessage(sock, msg, version, pool, registry) {
   const cmd = registry.find(name);
   if (!cmd) return;
 
-  if (cmd.ownerOnly !== false && !isOwner) return;
+  if (cmd.ownerOnly && !isOwner) return;
 
   const scope = cmd.scope ?? 'all';
   if (scope !== 'all' && scope !== chatType) {
@@ -59,6 +59,17 @@ export async function handleMessage(sock, msg, version, pool, registry) {
     }, { quoted: msg });
     return;
   }
+
+  if (registry.isOnCooldown(name, sender)) {
+    const key = `${name}:${sender}`;
+    const remaining = Math.ceil((registry._cooldowns.get(key) - Date.now()) / 1000);
+    await sock.sendMessage(from, {
+      text: `⏳ Tunggu ${remaining}s sebelum pakai /${name} lagi.`
+    }, { quoted: msg });
+    return;
+  }
+
+  registry.setCooldown(name, sender, cmd.cooldown);
 
   const ctx = { sock, msg, from, sender, senderAlt, isOwner, text, args, chatType, version, pool, registry };
 
