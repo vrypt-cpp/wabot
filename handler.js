@@ -1,13 +1,8 @@
 import { createLogger } from './utils/logger.js';
 import { getChatType, getSender, getSenderAlt, isFromOwner } from './utils/jid.js';
+import { config } from './config.js';
 
 const log = createLogger('HANDLER');
-
-const SLASH_PREFIX = '/';
-const ALIAS_PREFIXES = [
-  { prefix: '=> ', name: '=>' },
-  { prefix: '$ ',  name: '$'  },
-];
 
 function extractText(message) {
   if (!message) return '';
@@ -30,16 +25,14 @@ function extractText(message) {
 }
 
 function parseCommand(text) {
-  for (const { prefix, name } of ALIAS_PREFIXES) {
-    if (text.startsWith(prefix)) {
-      return { name, args: text.slice(prefix.length).trim() };
-    }
-  }
+  const prefixes = config.settings.prefix;
 
-  if (text.startsWith(SLASH_PREFIX)) {
-    const rest = text.slice(1).trimStart();
-    const [name, ...argParts] = rest.split(' ');
-    return { name: name.toLowerCase(), args: argParts.join(' ') };
+  for (const prefix of prefixes) {
+    if (text.startsWith(prefix)) {
+      const rest = text.slice(prefix.length).trimStart();
+      const [name, ...argParts] = rest.split(' ');
+      return { name: name.toLowerCase(), args: argParts.join(' ') };
+    }
   }
 
   return null;

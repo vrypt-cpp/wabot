@@ -4,14 +4,13 @@ import {
   isJidNewsletter,
   isPnUser,
 } from '@whiskeysockets/baileys';
-
-const OWNER_NUMBER = process.env.OWNER_NUMBER || '6285185985868';
+import { config } from '../config.js';
 
 export function getOwnerJids() {
-  return [
-    `${OWNER_NUMBER}@s.whatsapp.net`,
-    `${OWNER_NUMBER}@lid`
-  ];
+  return config.bot.ownerNumber.flatMap(num => [
+    `${num}@s.whatsapp.net`,
+    `${num}@lid`,
+  ]);
 }
 
 export function getChatType(remoteJid) {

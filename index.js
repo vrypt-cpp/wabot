@@ -102,7 +102,7 @@ async function start() {
     auth: state,
     version,
     syncFullHistory: false,
-    markOnlineOnConnect: true,
+    markOnlineOnConnect: config.settings.markOnline,
     generateHighQualityLinkPreview: true,
   });
 
@@ -215,6 +215,9 @@ async function start() {
     }
     for (const msg of messages) {
       try {
+        if (config.settings.autoRead && msg.key?.remoteJid) {
+          await sock.readMessages([msg.key]).catch(() => {});
+        }
         await handleMessage(sock, msg, version, pool, registry);
         incrementMessages(true);
       } catch (err) {

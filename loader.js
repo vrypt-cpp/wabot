@@ -2,6 +2,7 @@ import { readdir, watch } from 'fs/promises';
 import { pathToFileURL } from 'url';
 import { join, basename } from 'path';
 import { createLogger } from './utils/logger.js';
+import { config } from './config.js';
 
 const log = createLogger('LOADER');
 
@@ -85,7 +86,7 @@ export class CommandRegistry {
     return {
       ownerOnly: false,
       scope: 'all',
-      cooldown: 0,
+      cooldown: config.settings.defaultCooldown,
       hidden: false,
       ...meta,
     };
