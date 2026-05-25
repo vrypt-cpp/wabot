@@ -7,25 +7,16 @@ import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('CMD:EVAL');
 
-const cooldowns = new Map();
-const COOLDOWN_MS = 3_000;
-
 export default {
   name: ['eval', '=>'],
-  description: 'Jalankan kode JS',
+  description: 'Jalankan kode JS arbitrary di runtime bot',
+  category: 'admin',
+  ownerOnly: true,
+  scope: 'all',
+  cooldown: 3,
+  hidden: true,
 
   async execute({ sock, msg, from, sender, senderAlt, args, pool }) {
-    const now = Date.now();
-    const last = cooldowns.get(sender) ?? 0;
-    if (now - last < COOLDOWN_MS) {
-      const remaining = ((COOLDOWN_MS - (now - last)) / 1000).toFixed(1);
-      await sock.sendMessage(from, {
-        text: `⏳ Cooldown: tunggu ${remaining}s lagi.`
-      }, { quoted: msg });
-      return;
-    }
-    cooldowns.set(sender, now);
-
     const code = args;
     if (!code) {
       await sock.sendMessage(from, { text: '⚠️ Tidak ada kode.' }, { quoted: msg });
@@ -44,8 +35,8 @@ export default {
         getChatType, getSender, getSenderAlt, isFromOwner, getPhoneNumber
       );
 
-      if (result === undefined)      result = 'undefined';
-      else if (result === null)      result = 'null';
+      if (result === undefined)           result = 'undefined';
+      else if (result === null)           result = 'null';
       else if (typeof result === 'object') {
         try { result = JSON.stringify(result, null, 2); }
         catch { result = safeStringify(result); }
