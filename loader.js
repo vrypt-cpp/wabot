@@ -16,6 +16,7 @@ export class CommandRegistry {
     this._fileToNames = new Map();
     this._watchDir = null;
     this._cooldowns = new Map();
+    this._watcherAbort = null;
 
     this._cleanupTimer = setInterval(() => this._purgeCooldowns(), COOLDOWN_CLEANUP_INTERVAL_MS);
     this._cleanupTimer.unref();
@@ -30,6 +31,11 @@ export class CommandRegistry {
 
   destroy() {
     clearInterval(this._cleanupTimer);
+    if (this._watcherAbort) {
+      this._watcherAbort.abort();
+      this._watcherAbort = null;
+      log.info('Watcher dihentikan.');
+    }
   }
 
   _validate(meta, filePath) {
@@ -144,6 +150,13 @@ export class CommandRegistry {
   async watch(dir, notify) {
     const watchDir = dir ?? this._watchDir;
     if (!watchDir) throw new Error('Call loadDir() before watch().');
+
+    if (this._watcherAbort) {
+      this._watcherAbort.abort();
+    }
+    this._watcherAbort = new AbortController();
+    const { signal } = this._watcherAbort;
+
     log.info(`Watching ${watchDir}...`);
 
     const debounce = new Map();
@@ -182,9 +195,15 @@ export class CommandRegistry {
       }, 300));
     };
 
-    const watcher = await watch(watchDir, { persistent: false });
-    for await (const { eventType, filename } of watcher) {
-      handle(eventType, filename);
+    try {
+      const watcher = await watch(watchDir, { persistent: false, signal });
+      for await (const { eventType, filename } of watcher) {
+        handle(eventType, filename);
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        log.error(`Watcher error: ${err.message}`);
+      }
     }
   }
 

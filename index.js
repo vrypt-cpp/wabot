@@ -35,6 +35,10 @@ createHttpServer(() => version);
 setBotState({ pool, isReconnecting: false, retryCount: 0 });
 
 async function initRegistry(sock) {
+  if (registry) {
+    registry.destroy();
+    registry = null;
+  }
   registry = new CommandRegistry();
   const dir = resolve(__dirname, 'commands');
   await registry.loadDir(dir);
@@ -191,6 +195,10 @@ async function start() {
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
+    if (!registry) {
+      log.warn('Pesan masuk sebelum registry siap, diabaikan.');
+      return;
+    }
     for (const msg of messages) {
       try {
         await handleMessage(sock, msg, version, pool, registry);

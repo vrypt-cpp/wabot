@@ -9,6 +9,26 @@ const ALIAS_PREFIXES = [
   { prefix: '$ ',  name: '$'  },
 ];
 
+function extractText(message) {
+  if (!message) return '';
+
+  return (
+    message.conversation                                          ??
+    message.extendedTextMessage?.text                            ??
+    message.imageMessage?.caption                                ??
+    message.videoMessage?.caption                                ??
+    message.documentMessage?.caption                             ??
+    message.documentWithCaptionMessage?.message?.documentMessage?.caption ??
+    message.listResponseMessage?.title                           ??
+    message.buttonsResponseMessage?.selectedDisplayText          ??
+    message.templateButtonReplyMessage?.selectedDisplayText      ??
+    message.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson ??
+    message.viewOnceMessage?.message?.imageMessage?.caption      ??
+    message.viewOnceMessage?.message?.videoMessage?.caption      ??
+    ''
+  );
+}
+
 function parseCommand(text) {
   for (const { prefix, name } of ALIAS_PREFIXES) {
     if (text.startsWith(prefix)) {
@@ -29,7 +49,7 @@ export async function handleMessage(sock, msg, version, pool, registry) {
   if (!msg.message) return;
 
   const from = msg.key.remoteJid;
-  const text = msg.message.conversation ?? msg.message.extendedTextMessage?.text ?? '';
+  const text = extractText(msg.message);
   const chatType = getChatType(from);
   const sender = getSender(msg);
   const senderAlt = getSenderAlt(msg);
