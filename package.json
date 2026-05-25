@@ -1,14 +1,26 @@
 {
-  "name": "wa-bot-postgres",
+  "name": "wabot",
   "version": "1.0.0",
-  "type": "module",
+  "description": "",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vrypt-cpp/wabot.git"
+  },
+  "keywords": [],
+  "author": "vrypt-cpp",
+  "license": "MIT",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/vrypt-cpp/wabot/issues"
+  },
+  "homepage": "https://github.com/vrypt-cpp/wabot#readme",
   "dependencies": {
-    "@whiskeysockets/baileys": "v7.0.0-rc13",
-    "dotenv": "^16.4.5",
+    "@whiskeysockets/baileys": "^7.0.0-rc13",
+    "dotenv": "^17.4.2",
     "mysql2": "^3.22.3"
   }
 }
