@@ -55,3 +55,22 @@ export function isFromOwner(sender, senderAlt) {
   const ownerJids = getOwnerJids();
   return ownerJids.includes(sender) || ownerJids.includes(senderAlt);
 }
+
+export async function isAdminGroup(sock, groupJid, sender) {
+  try {
+    const meta = await sock.groupMetadata(groupJid);
+    return meta.participants.some(p => {
+      const matchId          = p.id          === sender;
+      const matchPhoneNumber = p.phoneNumber === sender;
+      const isAdmin          = p.admin === 'admin' || p.admin === 'superadmin';
+      return (matchId || matchPhoneNumber) && isAdmin;
+    });
+  } catch {
+    return false;
+  }
+}
+
+export async function isBotAdmin(sock, groupJid) {
+  const [pnJid] = getOwnerJids();
+  return isAdminGroup(sock, groupJid, pnJid);
+}
