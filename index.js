@@ -14,18 +14,19 @@ import { handleMessage } from './handler.js';
 import { createLogger } from './utils/logger.js';
 import { CommandRegistry } from './loader.js';
 import { pool } from './utils/mysqlPool.js';
+import { config } from './config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const log = createLogger('WA');
 const logProcess = createLogger('PROCESS');
 
-const PHONE_NUMBER = process.env.PHONE_NUMBER || '62xxxxx';
+const PHONE_NUMBER = config.bot.phoneNumber;
 
 const RECONNECT_CONFIG = {
-  maxRetries: 10,
-  baseDelay: 3000,
-  maxDelay: 60000,
-  backoffMultiplier: 2,
+  maxRetries: config.reconnect.maxRetries,
+  baseDelay: config.reconnect.baseDelay,
+  maxDelay: config.reconnect.maxDelay,
+  backoffMultiplier: config.reconnect.backoffMultiplier,
 };
 
 let version = [];
@@ -89,7 +90,7 @@ async function scheduleReconnect(reason = 'unknown') {
 }
 
 async function start() {
-  const { state, saveCreds, removeSession } = await useMysqlAuthState(pool, 'session-1');
+  const { state, saveCreds, removeSession } = await useMysqlAuthState(pool, config.settings.sessionName);
   const { version: v, isLatest } = await fetchLatestBaileysVersion();
   version = v;
 
@@ -110,10 +111,21 @@ async function start() {
   if (!sock.authState.creds.registered) {
     try {
       await new Promise(resolve => setTimeout(resolve, 2000));
-      const PAIRING_CODE = await sock.requestPairingCode(PHONE_NUMBER, 'VRYPTBOT');
-      log.info(`PAIRING CODE: ${PAIRING_CODE}`);
+
+      const { customPairing } = config.settings;
+
+      const pairingCode = customPairing?.enable
+        ? await sock.requestPairingCode(
+            PHONE_NUMBER,
+            customPairing.code
+          )
+        : await sock.requestPairingCode(PHONE_NUMBER);
+
+      log.info(`PAIRING CODE: ${pairingCode}`);
     } catch (err) {
-      log.error('Error meminta pairing code', { detail: err.message });
+      log.error('Error meminta pairing code', {
+      detail: err?.message || err
+      });
     }
   }
 
@@ -132,7 +144,7 @@ async function start() {
       try {
         await new Promise(resolve => setTimeout(resolve, 2000));
         await sock.sendMessage(PHONE_NUMBER + '@s.whatsapp.net', {
-          text: '✅ Bot berhasil terhubung!'
+          text: `${config.bot.name} berhasil terhubung!`
         });
       } catch (err) {
         log.error('Gagal mengirim notifikasi koneksi', { detail: err.message });

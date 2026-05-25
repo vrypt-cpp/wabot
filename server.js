@@ -1,6 +1,7 @@
 import http from 'http';
 import { formatUptime } from './utils/format.js';
 import { createLogger } from './utils/logger.js';
+import { config } from './config.js';
 
 const log = createLogger('HTTP');
 
@@ -113,7 +114,7 @@ export function createHttpServer(getVersion) {
     }
   });
 
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = config.server.port;
 
   server.listen(PORT, () =>
     log.info(`HTTP server on port ${PORT}`, { routes: Object.keys(ROUTES).join(', ') }),
