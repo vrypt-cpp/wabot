@@ -21,6 +21,10 @@ export function setBotState(patch) {
   Object.assign(botState, patch);
 }
 
+export function getBotState() {
+  return botState;
+}
+
 export function incrementMessages(success = true) {
   if (success) botState.messagesProcessed++;
   else botState.messagesError++;
@@ -30,13 +34,22 @@ function buildPayload(getVersion) {
   const now = Date.now();
   const uptimeSec = Math.floor((now - botState.startedAt) / 1000);
 
-  const poolStats = botState.pool
-    ? {
-        total: botState.pool.totalCount,
-        idle: botState.pool.idleCount,
-        waiting: botState.pool.waitingCount,
-      }
-    : null;
+  let poolStats = null;
+  if (botState.pool) {
+    try {
+      const internalPool = botState.pool.pool;
+      poolStats = {
+        total:   internalPool._allConnections.length,
+        used:    internalPool._acquiringConnections.length + internalPool._freeConnections.length === 0
+                   ? internalPool._allConnections.length
+                   : internalPool._allConnections.length - internalPool._freeConnections.length,
+        idle:    internalPool._freeConnections.length,
+        waiting: internalPool._connectionQueue.length,
+      };
+    } catch {
+      poolStats = { error: 'stats unavailable' };
+    }
+  }
 
   return {
     status: botState.connection === 'open' ? 'online' : 'offline',

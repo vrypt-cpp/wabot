@@ -8,12 +8,28 @@ const log = createLogger('LOADER');
 const VALID_CATEGORIES = ['utility', 'fun', 'admin', 'info', 'media', 'moderation'];
 const VALID_SCOPES = ['all', 'group', 'private'];
 
+const COOLDOWN_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+
 export class CommandRegistry {
   constructor() {
     this._commands = new Map();
     this._fileToNames = new Map();
     this._watchDir = null;
     this._cooldowns = new Map();
+
+    this._cleanupTimer = setInterval(() => this._purgeCooldowns(), COOLDOWN_CLEANUP_INTERVAL_MS);
+    this._cleanupTimer.unref();
+  }
+
+  _purgeCooldowns() {
+    const now = Date.now();
+    for (const [key, expires] of this._cooldowns) {
+      if (now >= expires) this._cooldowns.delete(key);
+    }
+  }
+
+  destroy() {
+    clearInterval(this._cleanupTimer);
   }
 
   _validate(meta, filePath) {

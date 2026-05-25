@@ -9,7 +9,7 @@ import {
 } from '@whiskeysockets/baileys';
 import { useMysqlAuthState } from './utils/mysqlAuthState.js'
 import pino from 'pino';
-import { createHttpServer, setBotState, incrementMessages } from './server.js';
+import { createHttpServer, setBotState, getBotState, incrementMessages } from './server.js';
 import { handleMessage } from './handler.js';
 import { createLogger } from './utils/logger.js';
 import { CommandRegistry } from './loader.js';
@@ -29,12 +29,10 @@ const RECONNECT_CONFIG = {
 };
 
 let version = [];
-let retryCount = 0;
-let isReconnecting = false;
 let registry;
 
 createHttpServer(() => version);
-setBotState({ pool, isReconnecting: false, retryCount });
+setBotState({ pool, isReconnecting: false, retryCount: 0 });
 
 async function initRegistry(sock) {
   registry = new CommandRegistry();
@@ -47,6 +45,7 @@ async function initRegistry(sock) {
 }
 
 function getReconnectDelay() {
+  const { retryCount } = getBotState();
   const delay = Math.min(
     RECONNECT_CONFIG.baseDelay * Math.pow(RECONNECT_CONFIG.backoffMultiplier, retryCount),
     RECONNECT_CONFIG.maxDelay
@@ -56,26 +55,26 @@ function getReconnectDelay() {
 }
 
 async function scheduleReconnect(reason = 'unknown') {
-  if (isReconnecting) {
+  if (getBotState().isReconnecting) {
     log.warn('Reconnect sudah dijadwalkan, skip.');
     return;
   }
+
+  const { retryCount } = getBotState();
 
   if (retryCount >= RECONNECT_CONFIG.maxRetries) {
     log.fatal(`Gagal reconnect setelah ${RECONNECT_CONFIG.maxRetries} percobaan. Berhenti.`);
     process.exit(1);
   }
 
-  isReconnecting = true;
-  retryCount++;
-  setBotState({ isReconnecting: true, retryCount });
+  const nextRetry = retryCount + 1;
+  setBotState({ isReconnecting: true, retryCount: nextRetry });
 
   const delay = getReconnectDelay();
-  log.warn(`Disconnect (${reason}). Reconnect ke-${retryCount}/${RECONNECT_CONFIG.maxRetries} dalam ${delay}ms...`);
+  log.warn(`Disconnect (${reason}). Reconnect ke-${nextRetry}/${RECONNECT_CONFIG.maxRetries} dalam ${delay}ms...`);
 
   await new Promise(resolve => setTimeout(resolve, delay));
-  isReconnecting = false;
-  setBotState({ isReconnecting: false, retryCount });
+  setBotState({ isReconnecting: false });
 
   try {
     await start();
@@ -124,8 +123,7 @@ async function start() {
     }
 
     if (connection === 'open') {
-      retryCount = 0;
-      setBotState({ connection: 'open', retryCount: 0, lastConnectedAt: new Date().toISOString() });
+      setBotState({ connection: 'open', retryCount: 0, isReconnecting: false, lastConnectedAt: new Date().toISOString() });
       log.info('Terhubung!');
       try {
         await new Promise(resolve => setTimeout(resolve, 2000));
