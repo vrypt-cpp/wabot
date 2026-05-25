@@ -7,7 +7,6 @@ import {
   DisconnectReason,
   fetchLatestBaileysVersion,
 } from '@whiskeysockets/baileys';
-import pkg from 'pg';
 import { usePgAuthState } from './utils/pgAuthState.js';
 import { useMysqlAuthState } from './utils/mysqlAuthState.js'
 import pino from 'pino';
