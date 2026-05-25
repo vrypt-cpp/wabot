@@ -1,4 +1,4 @@
-import { proto, initAuthCreds, BufferJSON } from '@whiskeysockets/baileys';
+import { initAuthCreds, BufferJSON } from '@whiskeysockets/baileys';
 
 const TABLE_DDL = `
   CREATE TABLE IF NOT EXISTS wa_sessions (
@@ -74,6 +74,13 @@ export async function usePgAuthState(pool, sessionId = 'default') {
     );
   };
 
+  const removeSession = async () => {
+    await pool.query(
+      `DELETE FROM wa_sessions WHERE session_id = $1`,
+      [sessionId]
+    );
+  };
+
   const creds = (await read('creds')) ?? initAuthCreds();
 
   return {
@@ -103,5 +110,6 @@ export async function usePgAuthState(pool, sessionId = 'default') {
       },
     },
     saveCreds: () => write('creds', creds),
+    removeSession,
   };
 }
