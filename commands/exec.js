@@ -5,22 +5,17 @@ import { createLogger } from '../utils/logger.js';
 const execAsync = promisify(exec);
 const log = createLogger('CMD:EXEC');
 const BLOCKED = /^\s*(rm\s+-rf|dd\s+if|mkfs|shutdown|reboot|halt|poweroff|:()\{.*\})/i;
-const cooldowns = new Map();
-const COOLDOWN_MS = 5_000;
 
 export default {
   name: ['exec', '$'],
-  description: 'Jalankan shell command',
+  description: 'Jalankan shell command di server bot',
+  category: 'admin',
+  ownerOnly: true,
+  scope: 'all',
+  cooldown: 5,
+  hidden: true,
 
   async execute({ sock, msg, from, sender, args }) {
-    const now = Date.now();
-    const last = cooldowns.get(sender) ?? 0;
-    if (now - last < COOLDOWN_MS) {
-      const remaining = ((COOLDOWN_MS - (now - last)) / 1000).toFixed(1);
-      await sock.sendMessage(from, { text: `⏳ Cooldown: tunggu ${remaining}s lagi.` }, { quoted: msg });
-      return;
-    }
-
     const command = args;
     if (!command) {
       await sock.sendMessage(from, { text: '⚠️ Tidak ada command.' }, { quoted: msg });
@@ -32,8 +27,6 @@ export default {
       await sock.sendMessage(from, { text: '🚫 Command diblokir.' }, { quoted: msg });
       return;
     }
-
-    cooldowns.set(sender, now);
 
     let result;
     try {
