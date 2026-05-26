@@ -3,21 +3,27 @@ import { createLogger } from './logger.js';
 
 const log = createLogger('DB');
 
+const KEEP_ALIVE_INTERVAL_MS = 3 * 60 * 1000;
+
 export const pool = mysql.createPool({
-  host: process.env.MYSQL_HOST,
-  port: Number(process.env.MYSQL_PORT),
+  host:     process.env.MYSQL_HOST,
+  port:     Number(process.env.MYSQL_PORT),
   database: process.env.MYSQL_DATABASE,
-  user: process.env.MYSQL_USER,
+  user:     process.env.MYSQL_USER,
   password: process.env.MYSQL_PASSWORD,
+  ssl: { rejectUnauthorized: false },
   waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
+  connectionLimit: 5,
+  queueLimit: 50,
+  connectTimeout: 10_000,
+  idleTimeout: 120_000,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 30_000,
 });
 
 (async () => {
   try {
-    const conn = await pool.getConnection();
-    conn.release();
+    await pool.query('SELECT 1');
     log.info('Koneksi database berhasil.');
   } catch (err) {
     log.fatal('Gagal konek ke database saat startup.', { detail: err.message });
@@ -25,14 +31,13 @@ export const pool = mysql.createPool({
   }
 })();
 
-const POOL_KEEP_ALIVE_INTERVAL = 15_000;
-
-setInterval(async () => {
+const keepAliveTimer = setInterval(async () => {
   try {
-    const conn = await pool.getConnection();
-    await conn.ping();
-    conn.release();
+    await pool.query('SELECT 1');
+    log.debug('DB keep-alive OK');
   } catch (err) {
-    log.warn('Pool keep-alive ping gagal.', { detail: err.message });
+    log.warn('DB keep-alive gagal.', { detail: err.message });
   }
-}, POOL_KEEP_ALIVE_INTERVAL);
+}, KEEP_ALIVE_INTERVAL_MS);
+
+keepAliveTimer.unref();

@@ -6,6 +6,8 @@ import { config } from './config.js';
 
 const log = createLogger('LOADER');
 
+const HOT_RELOAD_ENABLED = process.env.HOT_RELOAD === 'true';
+
 const VALID_CATEGORIES = ['utility', 'fun', 'admin', 'info', 'media', 'moderation'];
 const VALID_SCOPES = ['all', 'group', 'private'];
 
@@ -157,6 +159,11 @@ export class CommandRegistry {
   }
 
   async watch(dir, notify) {
+    if (!HOT_RELOAD_ENABLED) {
+      log.info('Hot-reload dinonaktifkan (set HOT_RELOAD=true di .env untuk aktifkan). File watcher tidak dijalankan.');
+      return;
+    }
+
     const watchDir = dir ?? this._watchDir;
     if (!watchDir) throw new Error('Call loadDir() before watch().');
 

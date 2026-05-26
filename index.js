@@ -103,7 +103,7 @@ async function start() {
     version,
     syncFullHistory: false,
     markOnlineOnConnect: config.settings.markOnline,
-    generateHighQualityLinkPreview: true,
+    generateHighQualityLinkPreview: false
   });
 
   await initRegistry(sock);

@@ -40,10 +40,10 @@ export async function handleMessage(sock, msg, version, pool, registry) {
   const senderAlt = getSenderAlt(msg, sock);
   const isOwner   = isFromOwner(sender, senderAlt);
   switch (chatType) {
-    case 'group':      log.info('GROUP',      { from, sender, senderAlt, isOwner }); break;
-    case 'private':    log.info('PRIVATE',    { sender, senderAlt, isOwner });       break;
-    case 'newsletter': log.info('NEWSLETTER', { from });                             break;
-    case 'broadcast':  log.info('BROADCAST',  { from });                             break;
+    case 'group':      log.debug('GROUP',      { from, sender, senderAlt, isOwner }); break;
+    case 'private':    log.debug('PRIVATE',    { sender, senderAlt, isOwner });       break;
+    case 'newsletter': log.debug('NEWSLETTER', { from });                             break;
+    case 'broadcast':  log.debug('BROADCAST',  { from });                             break;
     default:           log.warn('UNKNOWN',    { from });
   }
   const parsed = parseCommand(text);
