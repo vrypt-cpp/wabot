@@ -24,3 +24,15 @@ export const pool = mysql.createPool({
     process.exit(1);
   }
 })();
+
+const POOL_KEEP_ALIVE_INTERVAL = 15_000;
+
+setInterval(async () => {
+  try {
+    const conn = await pool.getConnection();
+    await conn.ping();
+    conn.release();
+  } catch (err) {
+    log.warn('Pool keep-alive ping gagal.', { detail: err.message });
+  }
+}, POOL_KEEP_ALIVE_INTERVAL);
