@@ -218,6 +218,14 @@ async function start() {
         if (config.settings.autoRead && msg.key?.remoteJid) {
           await sock.readMessages([msg.key]).catch(() => {});
         }
+        if(config.settings.warmUp && msg.key?.remoteJid) {
+          await sock.sendMessage(msg.key.remoteJid, {
+            react: {
+              key: msg.key,
+              text: ''
+            }
+          })
+        }
         await handleMessage(sock, msg, version, pool, registry);
         incrementMessages(true);
       } catch (err) {
