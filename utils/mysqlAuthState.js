@@ -1,4 +1,5 @@
 import { initAuthCreds, BufferJSON } from '@whiskeysockets/baileys';
+import NodeCache from 'node-cache';
 
 const TABLE_DDL = `
   CREATE TABLE IF NOT EXISTS wa_sessions (
@@ -24,6 +25,9 @@ export async function useMysqlAuthState(pool, sessionId = 'default') {
     if (e.code !== 'ER_DUP_FIELDNAME') throw e;
   }
 
+  const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+  const cacheKey = (key) => `${sessionId}:${key}`;
+
   const serialize   = (data) => JSON.stringify(data, BufferJSON.replacer);
   const deserialize = (raw)  => JSON.parse(JSON.stringify(raw), BufferJSON.reviver);
 
@@ -34,6 +38,7 @@ export async function useMysqlAuthState(pool, sessionId = 'default') {
        ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()`,
       [sessionId, key, serialize(data)]
     );
+    cache.set(cacheKey(key), data);
   };
 
   const writeBatch = async (entries) => {
@@ -46,28 +51,50 @@ export async function useMysqlAuthState(pool, sessionId = 'default') {
        ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()`,
       params
     );
+    for (const [k, v] of entries) {
+      cache.set(cacheKey(k), v);
+    }
   };
 
   const read = async (key) => {
+    const ck = cacheKey(key);
+    if (cache.has(ck)) return cache.get(ck);
     const [rows] = await pool.query(
       `SELECT value FROM wa_sessions WHERE session_id = ? AND \`key\` = ?`,
       [sessionId, key]
     );
     if (!rows.length) return null;
-    return deserialize(rows[0].value);
+    const data = deserialize(rows[0].value);
+    cache.set(ck, data);
+    return data;
   };
 
   const readBatch = async (keys) => {
     if (!keys.length) return {};
-    const placeholders = keys.map(() => '?').join(', ');
-    const [rows] = await pool.query(
-      `SELECT \`key\`, value FROM wa_sessions
-       WHERE session_id = ? AND \`key\` IN (${placeholders})`,
-      [sessionId, ...keys]
-    );
-    return Object.fromEntries(
-      rows.map((row) => [row.key, deserialize(row.value)])
-    );
+    const result  = {};
+    const missing = [];
+    for (const key of keys) {
+      const ck = cacheKey(key);
+      if (cache.has(ck)) {
+        result[key] = cache.get(ck);
+      } else {
+        missing.push(key);
+      }
+    }
+    if (missing.length) {
+      const placeholders = missing.map(() => '?').join(', ');
+      const [rows] = await pool.query(
+        `SELECT \`key\`, value FROM wa_sessions
+         WHERE session_id = ? AND \`key\` IN (${placeholders})`,
+        [sessionId, ...missing]
+      );
+      for (const row of rows) {
+        const data = deserialize(row.value);
+        result[row.key] = data;
+        cache.set(cacheKey(row.key), data);
+      }
+    }
+    return result;
   };
 
   const removeBatch = async (keys) => {
@@ -77,6 +104,7 @@ export async function useMysqlAuthState(pool, sessionId = 'default') {
       `DELETE FROM wa_sessions WHERE session_id = ? AND \`key\` IN (${placeholders})`,
       [sessionId, ...keys]
     );
+    cache.del(keys.map(cacheKey));
   };
 
   const removeSession = async () => {
@@ -84,6 +112,7 @@ export async function useMysqlAuthState(pool, sessionId = 'default') {
       `DELETE FROM wa_sessions WHERE session_id = ?`,
       [sessionId]
     );
+    cache.del(cache.keys().filter((k) => k.startsWith(`${sessionId}:`)));
   };
 
   const creds = (await read('creds')) ?? initAuthCreds();
