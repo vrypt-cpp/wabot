@@ -17,6 +17,7 @@ export const config = {
       code: 'VRYPTBOT'
     },
     autoRead: true,
+    warmUp: true,
     markOnline: true,
     title: 'VryptBot || automation WhatsApp bot',
     body: 'Simple modern WhatsApp bot powered by Baileys.',
