@@ -1,6 +1,6 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { createLogger } from '../utils/logger.js';
+import { createLogger } from '../../utils/logger.js';
 
 const execAsync = promisify(exec);
 const log = createLogger('CMD:EXEC');
@@ -9,7 +9,7 @@ const BLOCKED = /^\s*(rm\s+-rf|dd\s+if|mkfs|shutdown|reboot|halt|poweroff|:()\{.
 export default {
   name: ['exec', '$'],
   description: 'Jalankan shell command di server bot',
-  category: 'admin',
+  category: 'moderation',
   ownerOnly: true,
   scope: 'all',
   cooldown: 5,

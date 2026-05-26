@@ -1,9 +1,9 @@
-import { setBotState } from '../server.js'
+import { setBotState } from '../../server.js'
 
 export default {
   name: 'restart',
   description: 'Restart proses bot dan tutup semua koneksi',
-  category: 'admin',
+  category: 'moderation',
   ownerOnly: true,
   scope: 'all',
   cooldown: 0,

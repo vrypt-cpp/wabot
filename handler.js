@@ -53,9 +53,11 @@ export async function handleMessage(sock, msg, version, pool, registry) {
   if (!cmd) return;
   if (cmd.ownerOnly && !isOwner) return;
   const scope = cmd.scope ?? 'all';
-  if (scope !== 'all' && scope !== chatType) {
+  const scopes = Array.isArray(scope) ? scope : [scope];
+  if (!scopes.includes('all') && !scopes.includes(chatType)) {
+    const scopeLabel = scopes.join(' atau ');
     await sock.sendMessage(from, {
-      text: `⚠️ Command /${name} hanya bisa di chat ${scope}.`
+      text: `⚠️ Command /${name} hanya bisa di chat ${scopeLabel}.`
     }, { quoted: msg });
     return;
   }

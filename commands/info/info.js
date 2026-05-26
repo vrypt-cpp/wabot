@@ -1,4 +1,4 @@
-import { formatUptime } from '../utils/format.js';
+import { formatUptime } from '../../utils/format.js';
 
 export default {
   name: 'info',
