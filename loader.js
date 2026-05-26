@@ -130,22 +130,30 @@ export class CommandRegistry {
     }
   }
 
-  async loadDir(dir) {
-    this._watchDir = dir;
-    let files;
+  async loadDir(dir, isRoot = true) {
+    if (isRoot) this._watchDir = dir;
+
+    let entries;
     try {
-      files = await readdir(dir);
+      entries = await readdir(dir, { withFileTypes: true });
     } catch {
       log.error(`Cannot read: ${dir}`);
       return;
     }
-    const jsFiles = files.filter(f => f.endsWith('.js'));
-    log.info(`Loading ${jsFiles.length} plugin(s) from ${dir}`);
-    for (const file of jsFiles) {
-      const filePath = join(dir, file);
-      const meta = await this._importFile(filePath);
-      if (meta) this.register(meta, filePath);
-    }
+
+    const jsFiles = entries.filter(e => e.isFile() && e.name.endsWith('.js') && !e.name.startsWith('_'));
+    const subDirs = entries.filter(e => e.isDirectory() && !e.name.startsWith('_'));
+
+    if (isRoot) log.info(`Loading plugin(s) from ${dir} (recursive)`);
+
+    await Promise.all([
+      ...jsFiles.map(async (e) => {
+        const filePath = join(dir, e.name);
+        const meta = await this._importFile(filePath);
+        if (meta) this.register(meta, filePath);
+      }),
+      ...subDirs.map(e => this.loadDir(join(dir, e.name), false)),
+    ]);
   }
 
   async watch(dir, notify) {
@@ -158,19 +166,32 @@ export class CommandRegistry {
     this._watcherAbort = new AbortController();
     const { signal } = this._watcherAbort;
 
-    log.info(`Watching ${watchDir}...`);
+    log.info(`Watching ${watchDir} (recursive)...`);
 
     const debounce = new Map();
 
-    const handle = async (event, filename) => {
+    const collectDirs = async (baseDir) => {
+      const result = [baseDir];
+      try {
+        const entries = await readdir(baseDir, { withFileTypes: true });
+        for (const e of entries) {
+          if (e.isDirectory() && !e.name.startsWith('_')) {
+            result.push(...await collectDirs(join(baseDir, e.name)));
+          }
+        }
+      } catch {}
+      return result;
+    };
+
+    const handle = (baseDir, filename) => {
       if (!filename?.endsWith('.js')) return;
-      const filePath = join(watchDir, filename);
+      const filePath = join(baseDir, filename);
 
       clearTimeout(debounce.get(filePath));
       debounce.set(filePath, setTimeout(async () => {
         debounce.delete(filePath);
 
-        const exists = await readdir(watchDir)
+        const exists = await readdir(baseDir)
           .then(files => files.includes(filename))
           .catch(() => false);
 
@@ -196,15 +217,35 @@ export class CommandRegistry {
       }, 300));
     };
 
-    try {
-      const watcher = await watch(watchDir, { persistent: false, signal });
-      for await (const { eventType, filename } of watcher) {
-        handle(eventType, filename);
+    const startWatcher = async (targetDir) => {
+      try {
+        const watcher = await watch(targetDir, { persistent: false, signal });
+        for await (const { filename } of watcher) {
+          if (!filename) continue;
+
+          const fullPath = join(targetDir, filename);
+          const isNewDir = await readdir(fullPath).then(() => true).catch(() => false);
+
+          if (isNewDir && !filename.startsWith('_')) {
+            log.info(`New subfolder detected: ${filename}, watching...`);
+            await this.loadDir(fullPath, false);
+            startWatcher(fullPath);
+            continue;
+          }
+
+          handle(targetDir, filename);
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          log.error(`Watcher error (${targetDir}): ${err.message}`);
+        }
       }
-    } catch (err) {
-      if (err.name !== 'AbortError') {
-        log.error(`Watcher error: ${err.message}`);
-      }
+    };
+
+    const allDirs = await collectDirs(watchDir);
+    log.info(`Watching ${allDirs.length} dir(s)...`);
+    for (const d of allDirs) {
+      startWatcher(d);
     }
   }
 
