@@ -29,20 +29,46 @@ export async function useMysqlAuthState(pool, sessionId = 'default') {
   const cacheKey = (key) => `${sessionId}:${key}`;
 
   const serialize   = (data) => JSON.stringify(data, BufferJSON.replacer);
-  const deserialize = (raw)  => JSON.parse(JSON.stringify(raw), BufferJSON.reviver);
+  const deserialize = (raw)  => {
+    const str = typeof raw === 'string' ? raw : JSON.stringify(raw);
+    return JSON.parse(str, BufferJSON.reviver);
+  };
+  const deepClone   = (data) => deserialize(serialize(data));
+
+  const writeLocks = new Map();
+  const withLock = async (key, fn) => {
+    const prev = writeLocks.get(key) ?? Promise.resolve();
+    let release;
+    const next = new Promise((res) => (release = res));
+    writeLocks.set(key, next);
+    try {
+      await prev;
+      return await fn();
+    } finally {
+      release();
+      if (writeLocks.get(key) === next) writeLocks.delete(key);
+    }
+  };
 
   const write = async (key, data) => {
-    await pool.query(
-      `INSERT INTO wa_sessions (session_id, \`key\`, value, updated_at)
-       VALUES (?, ?, ?, NOW())
-       ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()`,
-      [sessionId, key, serialize(data)]
-    );
-    cache.set(cacheKey(key), data);
+    return withLock(key, async () => {
+      await pool.query(
+        `INSERT INTO wa_sessions (session_id, \`key\`, value, updated_at)
+         VALUES (?, ?, ?, NOW())
+         ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()`,
+        [sessionId, key, serialize(data)]
+      );
+      cache.set(cacheKey(key), deepClone(data));
+    });
   };
 
   const writeBatch = async (entries) => {
     if (!entries.length) return;
+    await Promise.all(
+      entries.map(([k, v]) =>
+        withLock(k, () => cache.set(cacheKey(k), deepClone(v)))
+      )
+    );
     const placeholders = entries.map(() => '(?, ?, ?, NOW())').join(', ');
     const params = entries.flatMap(([k, v]) => [sessionId, k, serialize(v)]);
     await pool.query(
@@ -51,9 +77,6 @@ export async function useMysqlAuthState(pool, sessionId = 'default') {
        ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()`,
       params
     );
-    for (const [k, v] of entries) {
-      cache.set(cacheKey(k), v);
-    }
   };
 
   const read = async (key) => {
@@ -65,7 +88,7 @@ export async function useMysqlAuthState(pool, sessionId = 'default') {
     );
     if (!rows.length) return null;
     const data = deserialize(rows[0].value);
-    cache.set(ck, data);
+    cache.set(ck, deepClone(data));
     return data;
   };
 
@@ -91,7 +114,7 @@ export async function useMysqlAuthState(pool, sessionId = 'default') {
       for (const row of rows) {
         const data = deserialize(row.value);
         result[row.key] = data;
-        cache.set(cacheKey(row.key), data);
+        cache.set(cacheKey(row.key), deepClone(data));
       }
     }
     return result;
@@ -112,7 +135,7 @@ export async function useMysqlAuthState(pool, sessionId = 'default') {
       `DELETE FROM wa_sessions WHERE session_id = ?`,
       [sessionId]
     );
-    cache.del(cache.keys().filter((k) => k.startsWith(`${sessionId}:`)));
+    cache.flushAll();
   };
 
   const creds = (await read('creds')) ?? initAuthCreds();
