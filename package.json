@@ -10,7 +10,11 @@
     "type": "git",
     "url": "git+https://github.com/vrypt-cpp/wabot.git"
   },
-  "keywords": ["whatsapp-bot", "bot-wa", "baileys-bot"],
+  "keywords": [
+    "whatsapp-bot",
+    "bot-wa",
+    "baileys-bot"
+  ],
   "author": "vrypt-cpp",
   "license": "MIT",
   "type": "module",
@@ -21,6 +25,7 @@
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc13",
     "dotenv": "^17.4.2",
-    "mysql2": "^3.22.3"
+    "mysql2": "^3.22.3",
+    "node-cache": "^5.1.2"
   }
 }
