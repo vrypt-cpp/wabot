@@ -3,7 +3,7 @@ import { guardAdmin, send } from './_helpers.js';
 export default {
   name: 'link',
   description: 'Lihat link undangan grup',
-  category: 'moderation',
+  category: 'group',
   scope: 'group',
   cooldown: 3,
   async execute({ sock, msg, from, sender }) {

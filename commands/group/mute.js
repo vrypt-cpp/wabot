@@ -3,7 +3,7 @@ import { guardAdmin, guardBotAdmin, send } from './_helpers.js';
 export default {
   name: 'mute',
   description: 'Kunci grup — hanya admin yang bisa kirim pesan',
-  category: 'moderation',
+  category: 'group',
   scope: 'group',
   cooldown: 3,
   async execute({ sock, msg, from, sender }) {

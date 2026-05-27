@@ -3,7 +3,7 @@ import { guardAdmin, guardBotAdmin, send, normalizeJid, isSameJid } from './_hel
 export default {
   name: ['delete', 'del'],
   description: 'Hapus pesan (reply pesan yang ingin dihapus)',
-  category: 'moderation',
+  category: 'group',
   scope: 'group',
   cooldown: 3,
   async execute({ sock, msg, from, sender }) {

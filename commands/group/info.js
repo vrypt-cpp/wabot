@@ -3,7 +3,7 @@ import { getParticipantDisplayId } from './_helpers.js';
 export default {
   name: 'info',
   description: 'Tampilkan info grup',
-  category: 'moderation',
+  category: 'group',
   scope: 'group',
   cooldown: 5,
   async execute({ sock, msg, from }) {

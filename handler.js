@@ -1,5 +1,6 @@
 import { createLogger } from './utils/logger.js';
 import { getChatType, getSender, getSenderAlt, isFromOwner } from './utils/jid.js';
+import { reply } from './utils/function.js';
 import { config } from './config.js';
 
 const log = createLogger('HANDLER');
@@ -81,7 +82,7 @@ export async function handleMessage(sock, msg, version, pool, registry) {
 
   registry.setCooldown(name, sender, cmd.cooldown);
 
-  const ctx = { sock, msg, from, sender, senderAlt, isOwner, text, args, chatType, version, pool, registry };
+  const ctx = { sock, msg, from, sender, senderAlt, isOwner, text, args, chatType, version, pool, registry, config, reply };
 
   try {
     await cmd.execute(ctx);

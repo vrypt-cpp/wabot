@@ -16,7 +16,7 @@ export default {
   cooldown: 3,
   hidden: true,
 
-  async execute({ sock, msg, from, sender, senderAlt, isOwner, text, args, chatType, version, pool, registry }) {
+  async execute({ sock, msg, from, sender, senderAlt, isOwner, text, args, chatType, version, pool, registry, config, reply }) {
     const code = args;
     if (!code) {
       await sock.sendMessage(from, { text: '⚠️ Tidak ada kode.' }, { quoted: msg });
@@ -24,8 +24,8 @@ export default {
     }
 
     const ctx = {
-      sock, msg, from, sender, senderAlt, isOwner,
-      text, args, chatType, version, pool, registry,
+      sock, msg, from, sender, senderAlt, isOwner, reply,
+      text, args, chatType, version, pool, registry, config,
       getChatType, getSender, getSenderAlt, isFromOwner, getPhoneNumber,
     };
 

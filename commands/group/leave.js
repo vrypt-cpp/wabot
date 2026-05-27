@@ -3,7 +3,7 @@ import { send } from './_helpers.js';
 export default {
   name: 'leave',
   description: 'Bot keluar dari grup (owner only)',
-  category: 'moderation',
+  category: 'group',
   scope: 'group',
   ownerOnly: true,
   cooldown: 3,

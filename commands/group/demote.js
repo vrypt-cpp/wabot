@@ -3,7 +3,7 @@ import { guardAdmin, guardBotAdmin, getMentioned, getParticipantDisplayId } from
 export default {
   name: 'demote',
   description: 'Cabut admin member dari grup',
-  category: 'moderation',
+  category: 'group',
   scope: 'group',
   cooldown: 3,
   async execute({ sock, msg, from, sender }) {

@@ -1,5 +1,5 @@
 export default {
-  name: 'help',
+  name: ['help', 'menu'],
   description: 'Tampilkan daftar command yang tersedia',
   category: 'info',
   ownerOnly: false,
@@ -29,7 +29,7 @@ export default {
         const cmd = cmds[i];
         const isLast = i === cmds.length - 1;
         const names = Array.isArray(cmd.name) ? cmd.name : [cmd.name];
-        const trigger = names.map(n => `/${n}`).join(' | ');
+        const trigger = names.map(n => `\`/${n}\``).join(' | ');
         const scope = cmd.scope !== 'all' ? ` _(${cmd.scope})_` : '';
         const owner = cmd.ownerOnly ? ' 👑' : '';
         const tree = isLast ? '└' : '├';

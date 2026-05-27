@@ -3,7 +3,7 @@ import { guardAdmin, guardBotAdmin, getMentioned, getParticipantDisplayId } from
 export default {
   name: 'kick',
   description: 'Kick member dari grup',
-  category: 'moderation',
+  category: 'group',
   scope: 'group',
   cooldown: 3,
   async execute({ sock, msg, from, sender }) {

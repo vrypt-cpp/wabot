@@ -3,7 +3,7 @@ import { isBotJoined } from './_helpers.js';
 export default {
   name: 'join',
   description: 'Bot bergabung ke grup via link invite (owner only)',
-  category: 'moderation',
+  category: 'group',
   scope: 'all',
   ownerOnly: true,
   cooldown: 3,

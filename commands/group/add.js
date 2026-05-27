@@ -3,7 +3,7 @@ import { guardAdmin, guardBotAdmin } from './_helpers.js';
 export default {
   name: 'add',
   description: 'Tambah member ke grup',
-  category: 'moderation',
+  category: 'group',
   scope: 'group',
   cooldown: 3,
   async execute({ sock, msg, from, sender, args }) {

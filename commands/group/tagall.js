@@ -3,7 +3,7 @@ import { guardAdmin, getParticipantJids, getParticipantDisplayId } from './_help
 export default {
   name: 'tagall',
   description: 'Tag semua member grup',
-  category: 'moderation',
+  category: 'group',
   scope: 'group',
   cooldown: 10,
   async execute({ sock, msg, from, sender }) {
