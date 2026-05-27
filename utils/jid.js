@@ -5,105 +5,107 @@ import {
   isPnUser,
 } from '@whiskeysockets/baileys';
 import { config } from '../config.js';
+
 export function isLid(jid) {
   return typeof jid === 'string' && jid.endsWith('@lid');
 }
-export function isPn(jid) {
-  return typeof jid === 'string' && jid.endsWith('@s.whatsapp.net');
-}
-export function getPhoneNumber(jid) {
+
+export function getDisplayId(jid, phoneNumber = null) {
   if (!jid) return null;
+  if (phoneNumber) return phoneNumber.replace(/\D/g, '');
   return jid.split('@')[0];
 }
-export function getOwnerJids() {
-  return config.bot.ownerNumber.flatMap(num => [
-    `${num}@s.whatsapp.net`,
-    `${num}@lid`,       
-  ]);
-}
+
+export const getPhoneNumber = getDisplayId;
+
 export function getChatType(remoteJid) {
   if (!remoteJid) return 'unknown';
   if (isJidGroup(remoteJid)) return 'group';
   if (isJidNewsletter(remoteJid)) return 'newsletter';
   if (isJidBroadcast(remoteJid)) return 'broadcast';
   if (isPnUser(remoteJid)) return 'private';
-  if (isLid(remoteJid)) return 'private';   
+  if (isLid(remoteJid)) return 'private';
   return 'unknown';
 }
+
 export function getSender(msg, sock = null) {
   const { remoteJid, participant, fromMe } = msg.key;
   if (fromMe) {
-    const botJid = sock?.user?.id ?? `${config.bot.phoneNumber}@s.whatsapp.net`;
-    return botJid;
+    return sock?.user?.id ?? `${config.bot.phoneNumber}@s.whatsapp.net`;
   }
   if (isJidGroup(remoteJid)) {
     return participant ?? remoteJid;
   }
   return remoteJid;
 }
-export function getSenderAlt(msg, sock = null) {
+
+export function getSenderAlt(msg) {
   const { remoteJid, remoteJidAlt, participantAlt, fromMe } = msg.key;
-  if (fromMe) {
-    const botJid = sock?.user?.id ?? `${config.bot.phoneNumber}@s.whatsapp.net`;
-    return null;
-  }
-  if (isJidGroup(remoteJid)) {
-    return participantAlt ?? null;
-  }
+  if (fromMe) return null;
+  if (isJidGroup(remoteJid)) return participantAlt ?? null;
   return remoteJidAlt ?? null;
 }
+
 export function normalizeJid(jid) {
   if (!jid) return null;
   return jid.replace(/:\d+(?=@)/, '');
 }
+
 export function isSameJid(a, b) {
   if (!a || !b) return false;
   return normalizeJid(a) === normalizeJid(b);
 }
+
 export function isFromOwner(sender, senderAlt) {
   const ownerNumbers = config.bot.ownerNumber.map(n => n.replace(/\D/g, ''));
-  const check = (jid) => {
+  const checkJid = (jid) => {
     if (!jid) return false;
-    const num = getPhoneNumber(normalizeJid(jid)).replace(/\D/g, '');
-    return ownerNumbers.includes(num);
+    const num = normalizeJid(jid)?.split('@')[0]?.replace(/\D/g, '');
+    return !!num && ownerNumbers.includes(num);
   };
-  return check(sender) || check(senderAlt);
+  return checkJid(sender) || checkJid(senderAlt);
 }
-export async function isAdminGroup(sock, groupJid, sender) {
+
+export async function isAdminGroup(sock, groupJid, sender, meta = null) {
   if (!sender) return false;
   try {
-    const meta = await sock.groupMetadata(groupJid);
-    const senderNum = getPhoneNumber(normalizeJid(sender)).replace(/\D/g, '');
-    return meta.participants.some(p => {
+    const m = meta ?? await sock.groupMetadata(groupJid);
+    const normalSender = normalizeJid(sender);
+    return m.participants.some(p => {
       const isAdmin = p.admin === 'admin' || p.admin === 'superadmin';
       if (!isAdmin) return false;
-      const pidNum = getPhoneNumber(p.id ?? '').replace(/\D/g, '');
-      if (pidNum && pidNum === senderNum) return true;
-      const pnNum = getPhoneNumber(p.phoneNumber ?? '').replace(/\D/g, '');
-      if (pnNum && pnNum === senderNum) return true;
+      if (p.id && isSameJid(p.id, normalSender)) return true;
+      if (p.phoneNumber && isSameJid(p.phoneNumber, normalSender)) return true;
       return false;
     });
   } catch {
     return false;
   }
 }
-export async function isBotAdmin(sock, groupJid) {
-  const botNum = config.bot.phoneNumber.replace(/\D/g, '');
+
+export async function isBotAdmin(sock, groupJid, meta = null) {
   try {
-    const meta = await sock.groupMetadata(groupJid);
-    return meta.participants.some(p => {
+    const m = meta ?? await sock.groupMetadata(groupJid);
+    const botId = normalizeJid(sock?.user?.id);
+    return m.participants.some(p => {
       const isAdmin = p.admin === 'admin' || p.admin === 'superadmin';
       if (!isAdmin) return false;
-      const pidNum = getPhoneNumber(p.id ?? '').replace(/\D/g, '');
-      if (pidNum === botNum) return true;
-      const pnNum = getPhoneNumber(p.phoneNumber ?? '').replace(/\D/g, '');
-      if (pnNum === botNum) return true;
+      if (p.id && isSameJid(normalizeJid(p.id), botId)) return true;
+      if (p.phoneNumber && isSameJid(p.phoneNumber, botId)) return true;
       return false;
     });
   } catch {
     return false;
   }
 }
+
 export function getParticipantJids(participants) {
-  return participants.map(p => p.phoneNumber ?? p.id);
+  return participants.map(p => p.id ?? p.phoneNumber);
+}
+
+export function getParticipantDisplayId(p) {
+  if (isLid(p.id) && p.phoneNumber) {
+    return p.phoneNumber.split('@')[0].replace(/\D/g, '');
+  }
+  return (p.id ?? p.phoneNumber ?? '').split('@')[0];
 }

@@ -7,7 +7,8 @@ export default {
   scope: 'group',
   cooldown: 3,
   async execute({ sock, msg, from, sender }) {
-    if (!await guardAdmin(sock, from, sender, msg)) return;
+    const meta = await sock.groupMetadata(from);
+    if (!await guardAdmin(sock, from, sender, msg, meta)) return;
     const code = await sock.groupInviteCode(from);
     await send(sock, from, `🔗 Link undangan grup:\nhttps://chat.whatsapp.com/${code}`, msg);
   },

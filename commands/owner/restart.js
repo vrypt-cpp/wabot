@@ -11,9 +11,9 @@ export default {
 
   async execute({ sock, msg, from, pool }) {
     await sock.sendMessage(from, { text: '🔄 Restarting...' }, { quoted: msg });
-    
+
     setBotState({ isRestarting: true });
-    
+
     try { await pool?.end(); } catch {}
     try { await sock.logout(); } catch {}
     process.exit(0);

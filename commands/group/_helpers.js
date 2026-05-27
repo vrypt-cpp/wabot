@@ -1,57 +1,36 @@
 import {
   isAdminGroup,
   isBotAdmin,
+  getDisplayId,
   getPhoneNumber,
   normalizeJid,
+  isSameJid,
   getParticipantJids,
-  isLid,
+  getParticipantDisplayId,
 } from '../../utils/jid.js';
 
 export const send = (sock, from, text, msg) =>
   sock.sendMessage(from, { text }, { quoted: msg });
 
-export async function guardAdmin(sock, from, sender, msg) {
-  const ok = await isAdminGroup(sock, from, sender);
-
-  if (!ok) {
-    await send(
-      sock,
-      from,
-      '❌ Kamu harus admin untuk menggunakan command ini.',
-      msg
-    );
-  }
-
+export async function guardAdmin(sock, from, sender, msg, meta = null) {
+  const ok = await isAdminGroup(sock, from, sender, meta);
+  if (!ok) await send(sock, from, '❌ Kamu harus admin untuk menggunakan command ini.', msg);
   return ok;
 }
 
-export async function guardBotAdmin(sock, from, msg) {
-  const ok = await isBotAdmin(sock, from);
-
-  if (!ok) {
-    await send(
-      sock,
-      from,
-      '❌ Bot harus menjadi admin grup terlebih dahulu.',
-      msg
-    );
-  }
-
+export async function guardBotAdmin(sock, from, msg, meta = null) {
+  const ok = await isBotAdmin(sock, from, meta);
+  if (!ok) await send(sock, from, '❌ Bot harus menjadi admin grup terlebih dahulu.', msg);
   return ok;
 }
 
 export async function isBotJoined(sock, jid) {
   if (!jid?.endsWith('@g.us')) return false;
-
   try {
-    const metadata = await sock.groupMetadata(jid);
-
-    const botJid =
-      sock.user.id.split(':')[0] + '@s.whatsapp.net';
-
-    return metadata.participants.some(
-      p => normalizeJid(p.id) === normalizeJid(botJid)
-    );
+    const meta = await sock.groupMetadata(jid);
+    const botId = normalizeJid(sock.user?.id);
+    if (!botId) return false;
+    return meta.participants.some(p => isSameJid(normalizeJid(p.id), botId));
   } catch {
     return false;
   }
@@ -59,39 +38,16 @@ export async function isBotJoined(sock, jid) {
 
 export function getMentioned(msg) {
   const ctx = msg.message?.extendedTextMessage?.contextInfo;
-
   const mentions = ctx?.mentionedJid ?? [];
   const quoted = ctx?.participant ?? null;
-
   return [...new Set([...mentions, quoted].filter(Boolean))];
 }
 
-export async function resolveToPhoneJids(
-  sock,
-  groupJid,
-  targets
-) {
-  if (targets.every(t => !isLid(t))) return targets;
-
-  try {
-    const meta = await sock.groupMetadata(groupJid);
-
-    return targets.map(t => {
-      if (!isLid(t)) return t;
-
-      const found = meta.participants.find(
-        p => p.id === t
-      );
-
-      return found?.phoneNumber ?? t;
-    });
-  } catch {
-    return targets;
-  }
-}
-
 export {
+  getDisplayId,
   getPhoneNumber,
   normalizeJid,
+  isSameJid,
   getParticipantJids,
+  getParticipantDisplayId,
 };

@@ -2,19 +2,18 @@ export const config = {
   bot: {
     name: 'VryptBot',
     description: 'Simple WhatsApp bot built with @whiskeysockets/baileys, lightweight, and customizable automation using Node.js.',
-    phoneNumber: process.env.PHONE_NUMBER || '67073454525',
+    phoneNumber: process.env.PHONE_NUMBER || '',
     ownerNumber: process.env.OWNER_NUMBER
       ? process.env.OWNER_NUMBER.split(',').map(n => n.trim())
-      : ['67073454525', '62882005514880', '6285185985868']
+      : [],
   },
-  
   settings: {
     defaultCooldown: 3,
     sessionName: 'session-1',
     prefix: ['.', '#', '/', '&'],
     customPairing: {
       enable: true,
-      code: 'VRYPTBOT'
+      code: 'VRYPTBOT',
     },
     autoRead: true,
     warmUp: true,

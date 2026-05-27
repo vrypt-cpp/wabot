@@ -8,7 +8,7 @@ const log = createLogger('LOADER');
 
 const HOT_RELOAD_ENABLED = process.env.HOT_RELOAD === 'true';
 
-const VALID_CATEGORIES = ['utility', 'fun', 'admin', 'info', 'media', 'moderation'];
+const VALID_CATEGORIES = ['utility', 'info', 'media', 'moderation'];
 const VALID_SCOPES = ['all', 'group', 'private'];
 
 const COOLDOWN_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;

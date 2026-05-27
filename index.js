@@ -7,7 +7,7 @@ import {
   DisconnectReason,
   fetchLatestBaileysVersion,
 } from '@whiskeysockets/baileys';
-import { useMysqlAuthState } from './utils/mysqlAuthState.js'
+import { useMysqlAuthState } from './utils/mysqlAuthState.js';
 import pino from 'pino';
 import { createHttpServer, setBotState, getBotState, incrementMessages } from './server.js';
 import { handleMessage } from './handler.js';
@@ -19,8 +19,6 @@ import { config } from './config.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const log = createLogger('WA');
 const logProcess = createLogger('PROCESS');
-
-const PHONE_NUMBER = config.bot.phoneNumber;
 
 const RECONNECT_CONFIG = {
   maxRetries: config.reconnect.maxRetries,
@@ -43,10 +41,7 @@ async function initRegistry(sock) {
   registry = new CommandRegistry();
   const dir = resolve(__dirname, 'commands');
   await registry.loadDir(dir);
-  registry.watch(dir, {
-    sock,
-    from: PHONE_NUMBER + '@s.whatsapp.net',
-  }).catch(err => log.error('watch error', { detail: err.message }));
+  return dir;
 }
 
 function getReconnectDelay() {
@@ -66,7 +61,6 @@ async function scheduleReconnect(reason = 'unknown') {
   }
 
   const { retryCount } = getBotState();
-
   if (retryCount >= RECONNECT_CONFIG.maxRetries) {
     log.fatal(`Gagal reconnect setelah ${RECONNECT_CONFIG.maxRetries} percobaan. Berhenti.`);
     process.exit(1);
@@ -103,31 +97,29 @@ async function start() {
     version,
     syncFullHistory: false,
     markOnlineOnConnect: config.settings.markOnline,
-    generateHighQualityLinkPreview: false
+    generateHighQualityLinkPreview: false,
   });
 
-  await initRegistry(sock);
+  const commandsDir = await initRegistry(sock);
 
   if (!sock.authState.creds.registered) {
     try {
       await new Promise(resolve => setTimeout(resolve, 2000));
-
       const { customPairing } = config.settings;
-
       const pairingCode = customPairing?.enable
-        ? await sock.requestPairingCode(
-            PHONE_NUMBER,
-            customPairing.code
-          )
-        : await sock.requestPairingCode(PHONE_NUMBER);
-
+        ? await sock.requestPairingCode(config.bot.phoneNumber, customPairing.code)
+        : await sock.requestPairingCode(config.bot.phoneNumber);
       log.info(`PAIRING CODE: ${pairingCode}`);
     } catch (err) {
-      log.error('Error meminta pairing code', {
-      detail: err?.message || err
-      });
+      log.error('Error meminta pairing code', { detail: err?.message || err });
     }
   }
+
+  sock.ev.on('lid-mapping.update', (mappings) => {
+    log.debug('LID mapping update', { count: Object.keys(mappings).length });
+  });
+
+  let watchStarted = false;
 
   sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
     const code = lastDisconnect?.error?.output?.statusCode;
@@ -141,11 +133,16 @@ async function start() {
     if (connection === 'open') {
       setBotState({ connection: 'open', retryCount: 0, isReconnecting: false, lastConnectedAt: new Date().toISOString() });
       log.info('Terhubung!');
+
+      if (!watchStarted) {
+        watchStarted = true;
+        registry.watch(commandsDir, { sock, from: sock.user.id })
+          .catch(err => log.error('watch error', { detail: err.message }));
+      }
+
       try {
         await new Promise(resolve => setTimeout(resolve, 2000));
-        await sock.sendMessage(PHONE_NUMBER + '@s.whatsapp.net', {
-          text: `${config.bot.name} berhasil terhubung!`
-        });
+        await sock.sendMessage(sock.user.id, { text: `${config.bot.name} berhasil terhubung!` });
       } catch (err) {
         log.error('Gagal mengirim notifikasi koneksi', { detail: err.message });
       }
@@ -153,7 +150,6 @@ async function start() {
 
     if (connection === 'close') {
       if (getBotState().isRestarting) return;
-      
       setBotState({
         connection: 'close',
         retryCount: getBotState().retryCount,
@@ -215,16 +211,12 @@ async function start() {
     }
     for (const msg of messages) {
       try {
+        if (msg.key?.fromMe) continue;
         if (config.settings.autoRead && msg.key?.remoteJid) {
           await sock.readMessages([msg.key]).catch(() => {});
         }
-        if(config.settings.warmUp && msg.key?.remoteJid) {
-          await sock.sendMessage(msg.key.remoteJid, {
-            react: {
-              key: msg.key,
-              text: ''
-            }
-          })
+        if (config.settings.warmUp && msg.key?.remoteJid) {
+          await sock.sendMessage(msg.key.remoteJid, { react: { key: msg.key, text: '' } });
         }
         await handleMessage(sock, msg, version, pool, registry);
         incrementMessages(true);

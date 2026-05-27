@@ -1,4 +1,4 @@
-import { getPhoneNumber } from './_helpers.js';
+import { getParticipantDisplayId } from './_helpers.js';
 
 export default {
   name: 'info',
@@ -8,17 +8,24 @@ export default {
   cooldown: 5,
   async execute({ sock, msg, from }) {
     const meta = await sock.groupMetadata(from);
-    const admins = meta.participants.filter(p => p.admin).map(p => `@${getPhoneNumber(p.phoneNumber ?? p.id)}`);
-    const adminMentions = meta.participants.filter(p => p.admin).map(p => p.phoneNumber ?? p.id);
+    const adminParticipants = meta.participants.filter(p => p.admin);
+    const adminLabels = adminParticipants.map(p => `@${getParticipantDisplayId(p)}`);
+    const adminJids = adminParticipants.map(p => p.id ?? p.phoneNumber);
+    const ownerDisplay = meta.ownerPn
+      ? meta.ownerPn.split('@')[0]
+      : (meta.owner ? meta.owner.split('@')[0] : '-');
+
     const text = [
       `📋 *Info Grup*`,
       `├ Nama      : ${meta.subject}`,
       `├ ID        : ${meta.id}`,
+      `├ Owner     : ${ownerDisplay}`,
       `├ Member    : ${meta.participants.length}`,
-      `├ Admin     : ${admins.join(', ')}`,
+      `├ Admin     : ${adminLabels.join(', ')}`,
       `├ Deskripsi : ${meta.desc ?? '-'}`,
       `└ Dibuat    : ${new Date(meta.creation * 1000).toLocaleDateString('id-ID', { dateStyle: 'long' })}`,
     ].join('\n');
-    await sock.sendMessage(from, { text, mentions: adminMentions }, { quoted: msg });
+
+    await sock.sendMessage(from, { text, mentions: adminJids }, { quoted: msg });
   },
 };

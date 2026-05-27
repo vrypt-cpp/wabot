@@ -1,4 +1,4 @@
-import { guardAdmin, guardBotAdmin, getMentioned, resolveToPhoneJids, getPhoneNumber } from './_helpers.js';
+import { guardAdmin, guardBotAdmin, getMentioned, getParticipantDisplayId } from './_helpers.js';
 
 export default {
   name: 'demote',
@@ -7,13 +7,21 @@ export default {
   scope: 'group',
   cooldown: 3,
   async execute({ sock, msg, from, sender }) {
-    if (!await guardAdmin(sock, from, sender, msg)) return;
-    if (!await guardBotAdmin(sock, from, msg)) return;
+    const meta = await sock.groupMetadata(from);
+    if (!await guardAdmin(sock, from, sender, msg, meta)) return;
+    if (!await guardBotAdmin(sock, from, msg, meta)) return;
+
     const targets = getMentioned(msg);
-    if (!targets.length) return sock.sendMessage(from, { text: '❌ Tag atau reply member yang ingin didemote.' }, { quoted: msg });
-    const resolved = await resolveToPhoneJids(sock, from, targets);
-    await sock.groupParticipantsUpdate(from, resolved, 'demote');
-    const names = resolved.map(t => `@${getPhoneNumber(t)}`).join(', ');
-    await sock.sendMessage(from, { text: `⬇️ Berhasil demote ${names} dari admin`, mentions: resolved }, { quoted: msg });
+    if (!targets.length) {
+      return sock.sendMessage(from, { text: '❌ Tag atau reply member yang ingin didemote.' }, { quoted: msg });
+    }
+
+    const names = targets.map(t => {
+      const p = meta.participants.find(x => x.id === t);
+      return `@${p ? getParticipantDisplayId(p) : t.split('@')[0]}`;
+    }).join(', ');
+
+    await sock.groupParticipantsUpdate(from, targets, 'demote');
+    await sock.sendMessage(from, { text: `⬇️ Berhasil demote ${names} dari admin`, mentions: targets }, { quoted: msg });
   },
 };

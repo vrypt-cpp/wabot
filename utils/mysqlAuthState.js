@@ -36,7 +36,6 @@ export async function useMysqlAuthState(pool, sessionId = 'default') {
   cacheRegistry.set(sessionId, cache);
 
   const cacheKey = (key) => `${sessionId}:${key}`;
-
   const serialize   = (data) => JSON.stringify(data, BufferJSON.replacer);
   const deserialize = (raw)  => {
     const str = typeof raw === 'string' ? raw : JSON.stringify(raw);
@@ -73,11 +72,6 @@ export async function useMysqlAuthState(pool, sessionId = 'default') {
 
   const writeBatch = async (entries) => {
     if (!entries.length) return;
-    await Promise.all(
-      entries.map(([k, v]) =>
-        withLock(k, () => cache.set(cacheKey(k), deepClone(v)))
-      )
-    );
     const placeholders = entries.map(() => '(?, ?, ?, NOW())').join(', ');
     const params = entries.flatMap(([k, v]) => [sessionId, k, serialize(v)]);
     await pool.query(
@@ -86,6 +80,9 @@ export async function useMysqlAuthState(pool, sessionId = 'default') {
        ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()`,
       params
     );
+    for (const [k, v] of entries) {
+      await withLock(k, () => cache.set(cacheKey(k), deepClone(v)));
+    }
   };
 
   const read = async (key) => {
